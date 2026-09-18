@@ -292,6 +292,27 @@ const [pendingStone, setPendingStone] =
     }
   }
 
+  const getRawPositionFromPointer = (
+    event: React.PointerEvent,
+  ) => {
+    const svg = svgRef.current
+
+    if (!svg) {
+      return null
+    }
+
+    const rect = svg.getBoundingClientRect()
+
+    return {
+      x:
+        ((event.clientX - rect.left) / rect.width) *
+        SHEET_WIDTH,
+      y:
+        ((event.clientY - rect.top) / rect.height) *
+        PLAYING_LENGTH,
+    }
+  }
+
  const saveUndoState = () => {
   const snapshot: UndoState = {
     stones: stones.map((stone) => ({ ...stone })),
@@ -351,7 +372,7 @@ const handleRecordThrow = () => {
     return
   }
 
-  if (!pendingStone) {
+  if (!pendingStone || pendingStone.out) {
     alert('投球する石を盤面上で決めてください。')
     return
   }
@@ -759,11 +780,27 @@ const handlePendingStonePointerMove = (
     return
   }
 
-  const position = getPositionFromPointer(event)
+  const rawPosition = getRawPositionFromPointer(event)
 
-  if (!position) {
+  if (!rawPosition) {
     return
   }
+
+  const position = {
+    x: Math.max(
+      0.145,
+      Math.min(SHEET_WIDTH - 0.145, rawPosition.x),
+    ),
+    y: Math.max(
+      0.145,
+      Math.min(PLAYING_LENGTH - 0.145, rawPosition.y),
+    ),
+  }
+  const isOut =
+    rawPosition.x < 0 ||
+    rawPosition.x > SHEET_WIDTH ||
+    rawPosition.y < 0 ||
+    rawPosition.y > PLAYING_LENGTH
 
   setPendingStone((current) =>
     current
@@ -771,6 +808,7 @@ const handlePendingStonePointerMove = (
           ...current,
           x: position.x,
           y: position.y,
+          out: isOut,
         }
       : null,
   )
@@ -803,11 +841,27 @@ const handlePendingStoneSvgPointerMove = (
     return
   }
 
-  const position = getPositionFromPointer(event)
+  const rawPosition = getRawPositionFromPointer(event)
 
-  if (!position) {
+  if (!rawPosition) {
     return
   }
+
+  const position = {
+    x: Math.max(
+      0.145,
+      Math.min(SHEET_WIDTH - 0.145, rawPosition.x),
+    ),
+    y: Math.max(
+      0.145,
+      Math.min(PLAYING_LENGTH - 0.145, rawPosition.y),
+    ),
+  }
+  const isOut =
+    rawPosition.x < 0 ||
+    rawPosition.x > SHEET_WIDTH ||
+    rawPosition.y < 0 ||
+    rawPosition.y > PLAYING_LENGTH
 
   setPendingStone((current) =>
     current
@@ -815,6 +869,7 @@ const handlePendingStoneSvgPointerMove = (
           ...current,
           x: position.x,
           y: position.y,
+          out: isOut,
         }
       : null,
   )
@@ -1822,6 +1877,7 @@ const handlePendingStoneSvgPointerUp = (
   </div>
 )}
       <svg
+        className="sheet-board"
         ref={svgRef}
         viewBox={`0 0 ${SHEET_WIDTH * SCALE} ${
           PLAYING_LENGTH * SCALE
@@ -1978,7 +2034,7 @@ const handlePendingStoneSvgPointerUp = (
         })}
 
         {/* Pending stone preview */}
-        {pendingStone && (
+        {pendingStone && !pendingStone.out && (
           <circle
             cx={pendingStone.x * SCALE}
             cy={pendingStone.y * SCALE}
@@ -1998,7 +2054,8 @@ const handlePendingStoneSvgPointerUp = (
           />
         )}
       </svg>
-      <div
+        <div
+      className="throw-log"
   style={{
     marginTop: '16px',
     padding: '12px',
