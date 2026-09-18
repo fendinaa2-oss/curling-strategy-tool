@@ -372,18 +372,23 @@ const handleRecordThrow = () => {
     return
   }
 
-  if (!pendingStone || pendingStone.out) {
-    alert('投球する石を盤面上で決めてください。')
-    return
-  }
+  const canPlacePendingStone = Boolean(
+    pendingStone && !pendingStone.out,
+  )
+  const placedStone = canPlacePendingStone && pendingStone
+    ? {
+        ...pendingStone,
+        id: nextStoneId,
+        out: false,
+      }
+    : null
 
-  const placedStone: Stone = {
-    ...pendingStone,
-    id: nextStoneId,
-    out: false,
-  }
-
-  const nextStones = [...stones, placedStone]
+  const nextStones = placedStone
+    ? [...stones, placedStone]
+    : [...stones]
+  const nextThrowNumber = currentThrow + 1
+  const nextStoneNumber =
+    nextStoneId + (placedStone ? 1 : 0)
 
   const record: ThrowRecord = {
     endNumber: currentEnd,
@@ -399,7 +404,9 @@ const handleRecordThrow = () => {
   setThrowHistory((current) => [...current, record])
   setSelectedHistoryThrow(currentThrow)
 
-  setNextStoneId((current) => current + 1)
+  if (placedStone) {
+    setNextStoneId((current) => current + 1)
+  }
 
   setSelectedShotType('Guard')
   setSelectedRating(3)
@@ -407,9 +414,9 @@ const handleRecordThrow = () => {
 
   if (currentThrow < maxThrowsPerEnd) {
     setPendingStone({
-      id: nextStoneId + 1,
+      id: nextStoneNumber,
       color:
-        pendingStone.color === 'red'
+        pendingStone?.color === 'red'
           ? 'yellow'
           : 'red',
       x: 0.3,
@@ -417,7 +424,7 @@ const handleRecordThrow = () => {
       out: false,
     })
 
-    setCurrentThrow((current) => current + 1)
+    setCurrentThrow(nextThrowNumber)
   } else {
     setPendingStone(null)
   }
@@ -972,6 +979,43 @@ const handlePendingStoneSvgPointerUp = (
     }
 
     saveUndoState()
+
+    const latestRecord =
+      throwHistory[throwHistory.length - 1]
+    const isLatestRecordedStone =
+      latestRecord?.endNumber === currentEnd &&
+      latestRecord?.throwNumber === currentThrow - 1 &&
+      latestRecord.stones.at(-1)?.id === selectedStoneId &&
+      latestRecord.stones.some(
+        (stone) => stone.id === selectedStoneId,
+      )
+
+    if (isLatestRecordedStone) {
+      const previousRecord =
+        throwHistory[throwHistory.length - 2]
+      const restoredStones = previousRecord
+        ? previousRecord.stones.map((stone) => ({ ...stone }))
+        : []
+      const deletedStone = latestRecord.stones.find(
+        (stone) => stone.id === selectedStoneId,
+      )
+
+      setStones(restoredStones)
+      setThrowHistory((current) => current.slice(0, -1))
+      setCurrentThrow(latestRecord.throwNumber)
+      setPendingStone(
+        deletedStone
+          ? { ...deletedStone, out: false }
+          : null,
+      )
+      setNextStoneId(selectedStoneId)
+      setSelectedHistoryThrow(null)
+      setSelectedStoneId(null)
+      setSelectedShotType('Guard')
+      setSelectedRating(3)
+      setShotNote('')
+      return
+    }
 
     setStones((current) =>
       current.filter(
