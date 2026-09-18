@@ -125,8 +125,6 @@ const [undoHistory, setUndoHistory] = useState<UndoState[]>([])
   useState<number | null>(null)
 
 const [isDraggingStone, setIsDraggingStone] = useState(false)
-const [isDraggingPendingStone, setIsDraggingPendingStone] =
-  useState(false)
 
 const [pendingStone, setPendingStone] =
   useState<Stone | null>({
@@ -756,7 +754,6 @@ const clearCurrentMatch = () => {
   setUndoHistory([])
   setSelectedStoneId(null)
   setIsDraggingStone(false)
-  setIsDraggingPendingStone(false)
   setPendingStone({
     id: 1,
     color: 'red',
@@ -768,72 +765,10 @@ const clearCurrentMatch = () => {
   localStorage.removeItem(STORAGE_KEY)
 }
 
-const handlePendingStonePointerDown = (
-  event: React.PointerEvent<HTMLDivElement>,
-) => {
-  pendingStoneDragRef.current = true
-  setIsDraggingPendingStone(true)
-  event.currentTarget.setPointerCapture(event.pointerId)
-}
-
-const handlePendingStonePointerMove = (
-  event: React.PointerEvent<HTMLDivElement>,
-) => {
-  if (
-    !event.currentTarget.hasPointerCapture(
-      event.pointerId,
-    )
-  ) {
-    return
-  }
-
-  const rawPosition = getRawPositionFromPointer(event)
-
-  if (!rawPosition) {
-    return
-  }
-
-  const position = {
-    x: Math.max(
-      0.145,
-      Math.min(SHEET_WIDTH - 0.145, rawPosition.x),
-    ),
-    y: Math.max(
-      0.145,
-      Math.min(PLAYING_LENGTH - 0.145, rawPosition.y),
-    ),
-  }
-  const isOut =
-    rawPosition.x < 0 ||
-    rawPosition.x > SHEET_WIDTH ||
-    rawPosition.y < 0 ||
-    rawPosition.y > PLAYING_LENGTH
-
-  setPendingStone((current) =>
-    current
-      ? {
-          ...current,
-          x: position.x,
-          y: position.y,
-          out: isOut,
-        }
-      : null,
-  )
-}
-
-const handlePendingStonePointerUp = (
-  event: React.PointerEvent<HTMLDivElement>,
-) => {
-  event.currentTarget.releasePointerCapture(event.pointerId)
-  pendingStoneDragRef.current = false
-  setIsDraggingPendingStone(false)
-}
-
 const handlePendingStoneSvgPointerDown = (
   event: React.PointerEvent<SVGCircleElement>,
 ) => {
   pendingStoneDragRef.current = true
-  setIsDraggingPendingStone(true)
   event.currentTarget.setPointerCapture(event.pointerId)
 }
 
@@ -887,7 +822,6 @@ const handlePendingStoneSvgPointerUp = (
 ) => {
   event.currentTarget.releasePointerCapture(event.pointerId)
   pendingStoneDragRef.current = false
-  setIsDraggingPendingStone(false)
 }
 
 
@@ -1871,55 +1805,6 @@ const handlePendingStoneSvgPointerUp = (
       </p>
 
 
-        {pendingStone && !isDraggingPendingStone && (
-  <div
-    style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '10px',
-      marginBottom: '10px',
-    }}
-  >
-    <span
-      style={{
-        fontSize: '14px',
-        color: '#666',
-      }}
-    >
-      次の石：
-    </span>
-
-    <div
-      style={{
-        width: '30px',
-        height: '30px',
-        borderRadius: '50%',
-        background:
-          pendingStone.color === 'red'
-            ? '#df4b4b'
-            : '#f2d94e',
-        border:
-          pendingStone.color === 'red'
-            ? '1px solid #b93636'
-            : '1px solid #c5a800',
-        cursor: 'grab',
-        touchAction: 'none',
-      }}
-      onPointerDown={handlePendingStonePointerDown}
-      onPointerMove={handlePendingStonePointerMove}
-      onPointerUp={handlePendingStonePointerUp}
-    />
-
-    <span
-      style={{
-        fontSize: '14px',
-        color: '#666',
-      }}
-    >
-      この石を盤面へドラッグ
-    </span>
-  </div>
-)}
       <svg
         className="sheet-board"
         ref={svgRef}
