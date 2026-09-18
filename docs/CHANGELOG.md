@@ -1,5 +1,15 @@
 # Curling Strategy Tool - Changelog
 
+## 2026-09-18
+
+### Specification v1.0
+
+- プロジェクト仕様書を正式版 v1.0 として整理
+- 4人制とMixed Doublesを共通設計で扱う方針を明確化
+- 盤面記録、投球状態継承、ショット評価、AI分析の方向性を確定
+- ゲーム形式ごとの差分を「設定差分」として扱う設計に整理
+- MVPスコープと将来拡張の境界を明文化
+
 ## 2026-09-17
 
 ### Project initialization
