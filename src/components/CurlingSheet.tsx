@@ -11,6 +11,9 @@ type SavedMatch = {
   id: string
   savedAt: string
   matchFormat: MatchFormat
+  endCount?: number
+  teamColor?: TeamColor
+  initialHammerTeam?: 'self' | 'opponent'
   scoreSelf: number
   scoreOpponent: number
   endResults: EndScore[]
@@ -44,6 +47,7 @@ type ThrowRecord = {
   shotType: ShotType
   rating: number
   note: string
+  throwerTeam?: 'self' | 'opponent'
 }
 
 type UndoState = {
@@ -64,7 +68,6 @@ const SHEET_WIDTH = 4.75
 const TEE_TO_BACK = 1.829
 const TEE_TO_HOG = 6.401
 const HOG_LINE_Y = TEE_TO_BACK + TEE_TO_HOG
-const PLAYING_LENGTH = HOG_LINE_Y
 const BOARD_EDGE_MARGIN = 0.6
 const BOARD_TOP_Y = -BOARD_EDGE_MARGIN
 const BOARD_BOTTOM_Y = HOG_LINE_Y + BOARD_EDGE_MARGIN
@@ -90,6 +93,8 @@ const SHOT_TYPES: ShotType[] = [
 
 function CurlingSheet({
   matchFormat,
+  endCount,
+  onEndCountChange,
   teamColor,
   teamName,
   opponentName,
@@ -97,6 +102,8 @@ function CurlingSheet({
   initialHammerTeam,
 }: {
   matchFormat: MatchFormat
+  endCount: number
+  onEndCountChange: (endCount: number) => void
   teamColor: TeamColor
   teamName: string
   opponentName: string
@@ -131,6 +138,9 @@ const [endResults, setEndResults] = useState<EndScore[]>([])
 const [endPoints, setEndPoints] = useState(1)
 const [showEndResultPage, setShowEndResultPage] = useState(false)
 const [showMatchSettings, setShowMatchSettings] = useState(false)
+const [showShotRate, setShowShotRate] = useState(false)
+const [selectedShotRateMatchId, setSelectedShotRateMatchId] =
+  useState<string | null>(null)
 const [matchFinished, setMatchFinished] = useState(false)
 const [settingsStartEnd, setSettingsStartEnd] = useState(1)
 const [settingsScoreSelf, setSettingsScoreSelf] = useState('0')
@@ -432,6 +442,10 @@ const handleRecordThrow = () => {
     shotType: selectedShotType,
     rating: selectedRating,
     note: shotNote,
+    throwerTeam:
+      (currentThrow % 2 === 1) === (hammerTeam === 'opponent')
+        ? 'self'
+        : 'opponent',
   }
 
   saveUndoState()
@@ -534,6 +548,9 @@ const createSavedMatch = (
     id: `${Date.now()}`,
     savedAt: new Date().toISOString(),
     matchFormat,
+    endCount,
+    teamColor,
+    initialHammerTeam,
     scoreSelf:
       scoreSelf +
       (finalEndResult === 'self' ? finalPoints : 0),
@@ -574,6 +591,9 @@ const handleLoadSavedMatch = (match: SavedMatch) => {
   )
 
   setThrowHistory(match.throwHistory)
+  onEndCountChange(
+    match.endCount ?? (match.matchFormat === 'four-person' ? 10 : 8),
+  )
   setEndResults(match.endResults)
   setScoreSelf(match.scoreSelf)
   setScoreOpponent(match.scoreOpponent)
@@ -621,63 +641,74 @@ const handlePrintMatch = (match: SavedMatch) => {
       .replaceAll("'", '&#039;')
 
   const sheetWidth = 190
-  const sheetHeight = 330
+  const sheetHeight = (sheetWidth * BOARD_VIEW_HEIGHT) / SHEET_WIDTH
   const centerX = sheetWidth / 2
-  const houseY = 82
-  const houseRadii = [72, 48, 24, 6]
+  const scaleX = sheetWidth / SHEET_WIDTH
+  const toPrintX = (x: number) => x * scaleX
+  const toPrintY = (y: number) => (y - BOARD_TOP_Y) * scaleX
+  const houseY = toPrintY(houseCenterY)
+  const houseRadii = HOUSE_RADII.map((radius) => radius * scaleX)
 
   const renderPrintSheet = (record: ThrowRecord) => {
     const stones = record.stones
       .filter((stone) => !stone.out)
       .map(
-        (stone) => `<circle cx="${(stone.x / SHEET_WIDTH) * sheetWidth}"
-          cy="${(stone.y / PLAYING_LENGTH) * sheetHeight}"
-          r="5.8" fill="${stone.color === 'red' ? '#df4b4b' : '#f2d94e'}"
+        (stone) => `<circle cx="${toPrintX(stone.x)}"
+          cy="${toPrintY(stone.y)}"
+          r="${0.145 * scaleX}" fill="${stone.color === 'red' ? '#df4b4b' : '#f2d94e'}"
           stroke="${stone.color === 'red' ? '#b93636' : '#c5a800'}" stroke-width="1" />`,
       )
       .join('')
 
-    return `<svg class="mini-sheet" viewBox="0 0 ${sheetWidth} ${sheetHeight}" role="img" aria-label="${record.endNumber}エンド ${record.throwNumber}投目">
-      <rect width="${sheetWidth}" height="${sheetHeight}" fill="#f5fbfd" />
-      <rect width="${sheetWidth}" height="${(TEE_TO_HOG / PLAYING_LENGTH) * sheetHeight}" fill="#edf7fa" />
+    return `<svg class="mini-sheet" viewBox="0 ${BOARD_TOP_Y * scaleX} ${sheetWidth} ${sheetHeight}" role="img" aria-label="${record.endNumber}エンド ${record.throwNumber}投目">
+      <rect x="0" y="${BOARD_TOP_Y * scaleX}" width="${sheetWidth}" height="${sheetHeight}" fill="#fff" />
       <circle cx="${centerX}" cy="${houseY}" r="${houseRadii[0]}" fill="#e8f3f7" stroke="#c8d5da" stroke-width="0.8" />
       <circle cx="${centerX}" cy="${houseY}" r="${houseRadii[1]}" fill="#fff" stroke="#c8d5da" stroke-width="0.8" />
       <circle cx="${centerX}" cy="${houseY}" r="${houseRadii[2]}" fill="#e8f3f7" stroke="#c8d5da" stroke-width="0.8" />
       <circle cx="${centerX}" cy="${houseY}" r="${houseRadii[3]}" fill="#fff" stroke="#c8d5da" stroke-width="0.8" />
-      <line x1="${centerX}" y1="0" x2="${centerX}" y2="${sheetHeight}" stroke="#c8d5da" stroke-width="0.8" />
+      <line x1="${centerX}" y1="${BOARD_TOP_Y * scaleX}" x2="${centerX}" y2="${BOARD_BOTTOM_Y * scaleX}" stroke="#c8d5da" stroke-width="0.8" />
       <line x1="0" y1="${houseY}" x2="${sheetWidth}" y2="${houseY}" stroke="#c8d5da" stroke-width="0.8" />
-      <line x1="0" y1="${(TEE_TO_HOG / PLAYING_LENGTH) * sheetHeight}" x2="${sheetWidth}" y2="${(TEE_TO_HOG / PLAYING_LENGTH) * sheetHeight}" stroke="#aebdc3" stroke-width="1" />
+      <line x1="0" y1="${toPrintY(0)}" x2="${sheetWidth}" y2="${toPrintY(0)}" stroke="#c8d5da" stroke-width="0.8" />
+      <line x1="0" y1="${toPrintY(HOG_LINE_Y)}" x2="${sheetWidth}" y2="${toPrintY(HOG_LINE_Y)}" stroke="#aebdc3" stroke-width="1" />
       ${stones}
     </svg>`
   }
 
-  const throwCards = match.throwHistory
-    .map(
-      (record) => `<article class="throw-card">
+  const renderThrowCard = (record: ThrowRecord) => `<article class="throw-card">
         ${renderPrintSheet(record)}
         <div class="throw-meta"><strong>${record.endNumber}エンド ${record.throwNumber}投目</strong> / ${escapeHtml(record.shotType)} / 評価 ${record.rating}/5</div>
         <div class="throw-note">${escapeHtml(record.note || 'コメントなし')}</div>
-      </article>`,
+      </article>`
+
+  const throwPages = Array.from(
+    { length: Math.ceil(match.throwHistory.length / 16) },
+    (_, pageIndex) => match.throwHistory.slice(pageIndex * 16, pageIndex * 16 + 16),
+  )
+    .map(
+      (records) => `<section class="throw-page">${records
+        .map(renderThrowCard)
+        .join('')}</section>`,
     )
     .join('')
 
   printWindow.document.write(`<!doctype html><html><head><title>Curling match report</title><style>
-    @page { size: A4; margin: 10mm; }
+    @page { size: A4 landscape; margin: 7mm; }
     body { font-family: sans-serif; font-size: 9px; color: #111; }
-    h1 { font-size: 16px; margin: 0 0 6px; }
-    p { margin: 3px 0; }
-    .throw-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin-top: 8px; }
+    h1 { font-size: 13px; margin: 0 0 3px; }
+    p { margin: 1px 0; font-size: 7px; }
+    .throw-page { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 2mm 2mm; height: 165mm; page-break-after: always; break-after: page; }
+    .throw-page:last-child { page-break-after: auto; break-after: auto; }
     .throw-card { border: 0; padding: 0; break-inside: avoid; page-break-inside: avoid; min-width: 0; overflow: hidden; }
-    .mini-sheet { display: block; width: 100%; height: auto; aspect-ratio: 190 / 330; border: 1px solid #bbb; }
-    .throw-meta { font-size: 6.5px; line-height: 1.15; margin-top: 2px; overflow-wrap: anywhere; }
-    .throw-note { font-size: 6.5px; line-height: 1.15; min-height: 14px; margin-top: 1px; overflow-wrap: anywhere; }
+    .mini-sheet { display: block; width: 100%; height: auto; aspect-ratio: ${sheetWidth} / ${sheetHeight}; border: 1px solid #bbb; }
+    .throw-meta { font-size: 5.5px; line-height: 1.1; margin-top: 1px; overflow-wrap: anywhere; }
+    .throw-note { font-size: 5.5px; line-height: 1.1; min-height: 8px; margin-top: 1px; overflow-wrap: anywhere; }
   </style></head><body>
     <h1>カーリング試合レポート</h1>
     <p>形式: ${match.matchFormat === 'four-person' ? '4人制' : 'Mixed Doubles'}</p>
     <p>保存日時: ${new Date(match.savedAt).toLocaleString()}</p>
     <p>最終スコア: 自チーム ${match.scoreSelf} - ${match.scoreOpponent} 相手</p>
     <p>試合メモ: ${escapeHtml(match.matchNote || '-')}</p>
-    <div class="throw-grid">${throwCards}</div>
+    ${throwPages}
   </body></html>`)
   printWindow.document.close()
   printWindow.focus()
@@ -1021,7 +1052,7 @@ const handlePendingStoneSvgPointerUp = (
 
   const centerX = SHEET_WIDTH / 2
   const houseCenterY = TEE_TO_BACK
-  const maxEnds = matchFormat === 'four-person' ? 10 : 8
+  const maxEnds = endCount
   const maxThrowsPerEnd =
     matchFormat === 'four-person' ? 16 : 10
 
@@ -1033,6 +1064,48 @@ const handlePendingStoneSvgPointerUp = (
     throwHistory.length === 0
       ? 0
       : (totalRating / (throwHistory.length * 5)) * 100
+  const shotPositions = [
+    { name: 'リード', throws: [1, 2] },
+    { name: 'セカンド', throws: [3, 4] },
+    { name: 'サード', throws: [5, 6] },
+    { name: 'フォース', throws: [7, 8] },
+  ]
+  const shotRateMatch = selectedShotRateMatchId
+    ? savedMatches.find((match) => match.id === selectedShotRateMatchId)
+    : null
+  const shotRateHistory = shotRateMatch?.throwHistory ?? throwHistory
+  const shotRateInitialHammer =
+    shotRateMatch?.initialHammerTeam ?? initialHammerTeam
+  const getShotRate = (
+    team: 'self' | 'opponent',
+    teamThrowNumber: number,
+  ) => {
+    const records = shotRateHistory.filter(
+      (record) => {
+        const firstTeam =
+          shotRateInitialHammer === 'opponent' ? 'self' : 'opponent'
+        const recordTeam =
+          record.throwerTeam ??
+          (record.throwNumber % 2 === 1 ? firstTeam : firstTeam === 'self' ? 'opponent' : 'self')
+        const calculatedTeamThrowNumber =
+          recordTeam === firstTeam
+            ? Math.ceil(record.throwNumber / 2)
+            : Math.ceil((record.throwNumber - 1) / 2)
+        return (
+          recordTeam === team &&
+          calculatedTeamThrowNumber === teamThrowNumber
+        )
+      },
+    )
+    if (records.length === 0) {
+      return null
+    }
+    return (
+      (records.reduce((sum, record) => sum + record.rating, 0) /
+        (records.length * 5)) *
+      100
+    )
+  }
   const selfTeamName = teamName || (teamColor === 'red' ? '赤チーム' : '黄チーム')
   const opponentTeamName = opponentName || (teamColor === 'red' ? '黄チーム' : '赤チーム')
   const teamPlayers = playerNames.filter((name) => name.trim() !== '')
@@ -1043,7 +1116,7 @@ const handlePendingStoneSvgPointerUp = (
         ? `${selfTeamName} リード`
         : `${opponentTeamName} リード`
 
-  const scoreColumns = Array.from({ length: 10 }, (_, index) => index + 1)
+  const scoreColumns = Array.from({ length: maxEnds }, (_, index) => index + 1)
 
   if (matchFinished) {
     return (
@@ -1401,7 +1474,134 @@ const handlePendingStoneSvgPointerUp = (
               <button onClick={() => handleDeleteSavedMatch(match.id)}>
                 この試合を削除
               </button>
+              <button
+                onClick={() => {
+                  setSelectedShotRateMatchId(match.id)
+                  setShowShotRate(true)
+                }}
+              >
+                この試合のショット率
+              </button>
             </div>
+          ))}
+        </div>
+      )}
+      <button
+        onClick={() => setShowShotRate((current) => !current)}
+        style={{
+          marginTop: '14px',
+          padding: '8px 12px',
+          borderRadius: '7px',
+          border: '1px solid #cbd5e1',
+          background: '#fff',
+          cursor: 'pointer',
+        }}
+      >
+        {showShotRate ? 'ショット率を隠す' : 'ショット率を表示'}
+      </button>
+      {showShotRate && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+            gap: '12px',
+            marginTop: '10px',
+            overflowX: 'auto',
+          }}
+        >
+          {[
+            { label: '自チーム', isSelf: true },
+            { label: '相手チーム', isSelf: false },
+          ].map(({ label, isSelf }) => (
+            <table
+              key={label}
+              style={{
+                width: '100%',
+                minWidth: '280px',
+                borderCollapse: 'collapse',
+                fontSize: '12px',
+                background: '#fff',
+              }}
+            >
+              <caption
+                style={{
+                  padding: '6px',
+                  border: '1px solid #cbd5e1',
+                  background: isSelf ? '#eef6ff' : '#fff7ed',
+                  fontWeight: '700',
+                }}
+              >
+                {label}
+              </caption>
+              <thead>
+                <tr>
+                  {['ポジション', '1投目', '2投目', '平均'].map((heading) => (
+                    <th
+                      key={heading}
+                      style={{
+                        padding: '6px 4px',
+                        border: '1px solid #cbd5e1',
+                        background: '#f8fafc',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {shotPositions.map((position) => {
+                    const rates = position.throws.map((throwNumber) =>
+                      getShotRate(isSelf ? 'self' : 'opponent', throwNumber),
+                    )
+                  const availableRates = rates.filter(
+                    (rate): rate is number => rate !== null,
+                  )
+                  const average =
+                    availableRates.length > 0
+                      ? availableRates.reduce((sum, rate) => sum + rate, 0) /
+                        availableRates.length
+                      : null
+                  return (
+                    <tr key={`${label}-${position.name}`}>
+                      <th
+                        style={{
+                          padding: '6px 4px',
+                          border: '1px solid #cbd5e1',
+                          background: '#f8fafc',
+                          textAlign: 'left',
+                        }}
+                      >
+                        {position.name}
+                      </th>
+                      {rates.map((rate, index) => (
+                        <td
+                          key={`${label}-${position.name}-${index}`}
+                          style={{
+                            padding: '6px 4px',
+                            border: '1px solid #cbd5e1',
+                            textAlign: 'center',
+                          }}
+                        >
+                          {rate === null ? '-' : `${rate.toFixed(1)}%`}
+                        </td>
+                      ))}
+                      <td
+                        style={{
+                          padding: '6px 4px',
+                          border: '1px solid #cbd5e1',
+                          textAlign: 'center',
+                          fontWeight: '700',
+                        }}
+                      >
+                        {average === null ? '-' : `${average.toFixed(1)}%`}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           ))}
         </div>
       )}
@@ -1431,7 +1631,7 @@ const handlePendingStoneSvgPointerUp = (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '100px repeat(12, minmax(22px, 1fr))',
+        gridTemplateColumns: `100px repeat(${maxEnds + 2}, minmax(22px, 1fr))`,
         fontSize: '12px',
       }}
     >

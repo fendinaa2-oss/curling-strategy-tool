@@ -11,11 +11,11 @@ function App() {
   const [format, setFormat] = useState<MatchFormat>('four-person')
   const [teamColor, setTeamColor] = useState<TeamColor>('red')
   const [hammer, setHammer] = useState<Hammer>('self')
+  const [endCount, setEndCount] = useState(10)
+  const [customEndCount, setCustomEndCount] = useState('10')
   const [teamName, setTeamName] = useState('')
   const [opponentName, setOpponentName] = useState('')
   const [playerNames, setPlayerNames] = useState(['', '', '', ''])
-
-  const endCount = format === 'four-person' ? 10 : 8
 
   const playerCount = format === 'four-person' ? 4 : 2
 
@@ -65,6 +65,40 @@ function App() {
                 <span>8エンド</span>
               </button>
             </div>
+          </div>
+
+          <div className="setting-section">
+            <h2>エンド数</h2>
+            <div className="choice-grid four-columns">
+              {[6, 8, 10].map((count) => (
+                <button
+                  key={count}
+                  className={`choice-button ${endCount === count ? 'selected' : ''}`}
+                  onClick={() => setEndCount(count)}
+                >
+                  {count}エンド
+                </button>
+              ))}
+              <button
+                className={`choice-button ${![6, 8, 10].includes(endCount) ? 'selected' : ''}`}
+                onClick={() => setEndCount(Number(customEndCount) || 1)}
+              >
+                任意
+              </button>
+            </div>
+            <label>
+              任意のエンド数
+              <input
+                type="number"
+                min="1"
+                max="20"
+                value={customEndCount}
+                onChange={(event) => {
+                  setCustomEndCount(event.target.value)
+                  setEndCount(Math.max(1, Math.min(20, Number(event.target.value) || 1)))
+                }}
+              />
+            </label>
           </div>
 
           <div className="setting-section">
@@ -198,6 +232,8 @@ function App() {
       {matchStarted && (
         <CurlingSheet
           matchFormat={format}
+          endCount={endCount}
+          onEndCountChange={setEndCount}
           teamColor={teamColor}
           teamName={teamName}
           opponentName={opponentName}
