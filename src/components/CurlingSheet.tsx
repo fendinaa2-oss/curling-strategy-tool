@@ -63,7 +63,14 @@ type UndoState = {
 const SHEET_WIDTH = 4.75
 const TEE_TO_BACK = 1.829
 const TEE_TO_HOG = 6.401
-const PLAYING_LENGTH = TEE_TO_HOG + TEE_TO_BACK
+const HOG_LINE_Y = TEE_TO_BACK + TEE_TO_HOG
+const PLAYING_LENGTH = HOG_LINE_Y
+const BOARD_EDGE_MARGIN = 0.6
+const BOARD_TOP_Y = -BOARD_EDGE_MARGIN
+const BOARD_BOTTOM_Y = HOG_LINE_Y + BOARD_EDGE_MARGIN
+const BOARD_VIEW_HEIGHT = BOARD_BOTTOM_Y - BOARD_TOP_Y
+const WAITING_STONE_X = 0.35
+const WAITING_STONE_Y = -0.3
 
 const HOUSE_RADII = [1.829, 1.219, 0.61, 0.152]
 
@@ -83,8 +90,18 @@ const SHOT_TYPES: ShotType[] = [
 
 function CurlingSheet({
   matchFormat,
+  teamColor,
+  teamName,
+  opponentName,
+  playerNames,
+  initialHammerTeam,
 }: {
   matchFormat: MatchFormat
+  teamColor: TeamColor
+  teamName: string
+  opponentName: string
+  playerNames: string[]
+  initialHammerTeam: 'self' | 'opponent'
 }) {
 const [stones, setStones] = useState<Stone[]>([
  
@@ -98,6 +115,8 @@ const [throwHistory, setThrowHistory] =
 
   const [selectedHistoryThrow, setSelectedHistoryThrow] =
   useState<number | null>(null)
+const [showShotPreview, setShowShotPreview] = useState(false)
+const [selectedPreviewEnd, setSelectedPreviewEnd] = useState<number | null>(null)
 
 const [selectedShotType, setSelectedShotType] =
   useState<ShotType>('Guard')
@@ -106,7 +125,7 @@ const [selectedRating, setSelectedRating] =
 const [shotNote, setShotNote] = useState('')
 const [scoreSelf, setScoreSelf] = useState(0)
 const [scoreOpponent, setScoreOpponent] = useState(0)
-const [hammerTeam, setHammerTeam] = useState<'self' | 'opponent'>('self')
+const [hammerTeam, setHammerTeam] = useState<'self' | 'opponent'>(initialHammerTeam)
 const [endResult, setEndResult] = useState<EndResult | null>(null)
 const [endResults, setEndResults] = useState<EndScore[]>([])
 const [endPoints, setEndPoints] = useState(1)
@@ -124,14 +143,13 @@ const [undoHistory, setUndoHistory] = useState<UndoState[]>([])
   const [selectedStoneId, setSelectedStoneId] =
   useState<number | null>(null)
 
-const [isDraggingStone, setIsDraggingStone] = useState(false)
 
 const [pendingStone, setPendingStone] =
   useState<Stone | null>({
     id: 1,
     color: 'red',
-    x: 0.35,
-    y: 0.35,
+    x: WAITING_STONE_X,
+    y: WAITING_STONE_Y,
     out: false,
   })
 
@@ -275,8 +293,9 @@ const [pendingStone, setPendingStone] =
       SHEET_WIDTH
 
     const y =
+      BOARD_TOP_Y +
       ((event.clientY - rect.top) / rect.height) *
-      PLAYING_LENGTH
+        BOARD_VIEW_HEIGHT
 
     return {
       x: Math.max(
@@ -284,8 +303,8 @@ const [pendingStone, setPendingStone] =
         Math.min(SHEET_WIDTH - 0.145, x),
       ),
       y: Math.max(
-        0.145,
-        Math.min(PLAYING_LENGTH - 0.145, y),
+        BOARD_TOP_Y,
+        Math.min(BOARD_BOTTOM_Y - 0.145, y),
       ),
     }
   }
@@ -306,8 +325,9 @@ const [pendingStone, setPendingStone] =
         ((event.clientX - rect.left) / rect.width) *
         SHEET_WIDTH,
       y:
+        BOARD_TOP_Y +
         ((event.clientY - rect.top) / rect.height) *
-        PLAYING_LENGTH,
+          BOARD_VIEW_HEIGHT,
     }
   }
 
@@ -345,17 +365,34 @@ const handleUndo = () => {
   const previousState =
     undoHistory[undoHistory.length - 1]
 
-  setStones(previousState.stones)
+  setStones(
+    previousState.stones.map((stone) => ({
+      ...stone,
+    })),
+  )
   setCurrentEnd(previousState.currentEnd)
   setCurrentThrow(previousState.currentThrow)
   setScoreSelf(previousState.scoreSelf)
   setScoreOpponent(previousState.scoreOpponent)
   setHammerTeam(previousState.hammerTeam)
-  setEndResults(previousState.endResults)
+  setEndResults(
+    previousState.endResults.map((item) => ({
+      ...item,
+    })),
+  )
   setEndPoints(previousState.endPoints)
-  setPendingStone(previousState.pendingStone)
+  setPendingStone(
+    previousState.pendingStone
+      ? { ...previousState.pendingStone }
+      : null,
+  )
   setNextStoneId(previousState.nextStoneId)
-  setThrowHistory(previousState.throwHistory)
+  setThrowHistory(
+    previousState.throwHistory.map((record) => ({
+      ...record,
+      stones: record.stones.map((stone) => ({ ...stone })),
+    })),
+  )
 
   setUndoHistory((current) =>
     current.slice(0, -1),
@@ -366,7 +403,7 @@ const handleUndo = () => {
 
 const handleRecordThrow = () => {
   if (currentThrow > maxThrowsPerEnd) {
-    alert('このエンドの投球は終了です。')
+    handleNextEnd()
     return
   }
 
@@ -400,7 +437,9 @@ const handleRecordThrow = () => {
   saveUndoState()
   setStones(nextStones)
   setThrowHistory((current) => [...current, record])
+  setSelectedPreviewEnd(currentEnd)
   setSelectedHistoryThrow(currentThrow)
+  setShowShotPreview(true)
 
   if (placedStone) {
     setNextStoneId((current) => current + 1)
@@ -417,14 +456,15 @@ const handleRecordThrow = () => {
         pendingStone?.color === 'red'
           ? 'yellow'
           : 'red',
-      x: 0.3,
-      y: 0.3,
+      x: WAITING_STONE_X,
+      y: WAITING_STONE_Y,
       out: false,
     })
 
     setCurrentThrow(nextThrowNumber)
   } else {
     setPendingStone(null)
+    setCurrentThrow(maxThrowsPerEnd + 1)
   }
 }
 
@@ -479,8 +519,8 @@ const handleConfirmEndResult = () => {
   setPendingStone({
     id: nextStoneId,
     color: 'red',
-    x: 0.35,
-    y: 0.35,
+    x: WAITING_STONE_X,
+    y: WAITING_STONE_Y,
     out: false,
   })
 }
@@ -518,6 +558,12 @@ const persistSavedMatch = (match: SavedMatch) => {
     ...savedMatches.filter((item) => item.id !== match.id),
   ]
 
+  setSavedMatches(nextMatches)
+  localStorage.setItem(SAVED_MATCHES_KEY, JSON.stringify(nextMatches))
+}
+
+const handleDeleteSavedMatch = (matchId: string) => {
+  const nextMatches = savedMatches.filter((match) => match.id !== matchId)
   setSavedMatches(nextMatches)
   localStorage.setItem(SAVED_MATCHES_KEY, JSON.stringify(nextMatches))
 }
@@ -693,8 +739,8 @@ const handleApplyMatchSettings = () => {
   setPendingStone({
     id: nextStoneId,
     color: 'red',
-    x: 0.35,
-    y: 0.35,
+    x: WAITING_STONE_X,
+    y: WAITING_STONE_Y,
     out: false,
   })
   setShowMatchSettings(false)
@@ -711,14 +757,31 @@ const handleHistorySelect = (endNumber: number, throwNumber: number) => {
     return
   }
 
+  setSelectedPreviewEnd(endNumber)
   setSelectedHistoryThrow(throwNumber)
-  setCurrentEnd(endNumber)
-  setStones(record.stones.map((stone) => ({ ...stone })))
+}
+
+const handleEditSelectedPreview = () => {
+  const record = throwHistory.find(
+    (item) =>
+      item.endNumber === selectedPreviewEnd &&
+      item.throwNumber === selectedHistoryThrow,
+  )
+
+  if (!record) {
+    return
+  }
+
+  setCurrentEnd(record.endNumber)
   setCurrentThrow(record.throwNumber)
+  setStones(record.stones.map((stone) => ({ ...stone })))
   setSelectedShotType(record.shotType)
   setSelectedRating(record.rating)
   setShotNote(record.note)
   setSelectedStoneId(null)
+  setSelectedHistoryThrow(null)
+  setSelectedPreviewEnd(null)
+  setShowShotPreview(false)
 }
 
 const clearCurrentMatch = () => {
@@ -753,12 +816,11 @@ const clearCurrentMatch = () => {
   setMatchNote('')
   setUndoHistory([])
   setSelectedStoneId(null)
-  setIsDraggingStone(false)
   setPendingStone({
     id: 1,
     color: 'red',
-    x: 0.35,
-    y: 0.35,
+    x: WAITING_STONE_X,
+    y: WAITING_STONE_Y,
     out: false,
   })
   setNextStoneId(2)
@@ -768,6 +830,7 @@ const clearCurrentMatch = () => {
 const handlePendingStoneSvgPointerDown = (
   event: React.PointerEvent<SVGCircleElement>,
 ) => {
+  saveUndoState()
   pendingStoneDragRef.current = true
   event.currentTarget.setPointerCapture(event.pointerId)
 }
@@ -795,15 +858,15 @@ const handlePendingStoneSvgPointerMove = (
       Math.min(SHEET_WIDTH - 0.145, rawPosition.x),
     ),
     y: Math.max(
-      0.145,
-      Math.min(PLAYING_LENGTH - 0.145, rawPosition.y),
+      BOARD_TOP_Y,
+      Math.min(BOARD_BOTTOM_Y - 0.145, rawPosition.y),
     ),
   }
   const isOut =
     rawPosition.x < 0 ||
     rawPosition.x > SHEET_WIDTH ||
-    rawPosition.y < 0 ||
-    rawPosition.y > PLAYING_LENGTH
+    rawPosition.y < BOARD_TOP_Y ||
+    rawPosition.y > BOARD_BOTTOM_Y
 
   setPendingStone((current) =>
     current
@@ -829,6 +892,7 @@ const handlePendingStoneSvgPointerUp = (
   event: React.PointerEvent<SVGCircleElement>,
   stoneId: number,
 ) => {
+  saveUndoState()
   event.currentTarget.setPointerCapture(event.pointerId)
   setSelectedStoneId(stoneId)
 }
@@ -844,11 +908,6 @@ const handlePendingStoneSvgPointerUp = (
     ) {
       return
     }
-
-    if (!isDraggingStone) {
-  saveUndoState()
-  setIsDraggingStone(true)
-}
 
     const position = getPositionFromPointer(event)
 
@@ -875,14 +934,15 @@ const handlePendingStoneSvgPointerUp = (
       SHEET_WIDTH
 
     const rawY =
+      BOARD_TOP_Y +
       ((event.clientY - rect.top) / rect.height) *
-      PLAYING_LENGTH
+        BOARD_VIEW_HEIGHT
 
     const isOut =
       rawX < 0 ||
       rawX > SHEET_WIDTH ||
-      rawY < 0 ||
-      rawY > PLAYING_LENGTH
+      rawY < BOARD_TOP_Y ||
+      rawY > BOARD_BOTTOM_Y
 
     return {
       ...stone,
@@ -891,8 +951,8 @@ const handlePendingStoneSvgPointerUp = (
         Math.min(SHEET_WIDTH - 0.145, rawX),
       ),
       y: Math.max(
-        0.145,
-        Math.min(PLAYING_LENGTH - 0.145, rawY),
+        BOARD_TOP_Y,
+        Math.min(BOARD_BOTTOM_Y - 0.145, rawY),
       ),
       out: isOut,
     }
@@ -904,7 +964,6 @@ const handlePendingStoneSvgPointerUp = (
   event: React.PointerEvent<SVGCircleElement>,
 ) => {
   event.currentTarget.releasePointerCapture(event.pointerId)
-  setIsDraggingStone(false)
 }
 
   const handleDeleteStone = () => {
@@ -974,12 +1033,17 @@ const handlePendingStoneSvgPointerUp = (
     throwHistory.length === 0
       ? 0
       : (totalRating / (throwHistory.length * 5)) * 100
+  const selfTeamName = teamName || (teamColor === 'red' ? '赤チーム' : '黄チーム')
+  const opponentTeamName = opponentName || (teamColor === 'red' ? '黄チーム' : '赤チーム')
+  const teamPlayers = playerNames.filter((name) => name.trim() !== '')
   const matchWinner =
     scoreSelf === scoreOpponent
       ? '同点'
       : scoreSelf > scoreOpponent
-        ? '自チーム リード'
-        : '相手チーム リード'
+        ? `${selfTeamName} リード`
+        : `${opponentTeamName} リード`
+
+  const scoreColumns = Array.from({ length: 10 }, (_, index) => index + 1)
 
   if (matchFinished) {
     return (
@@ -1206,30 +1270,24 @@ const handlePendingStoneSvgPointerUp = (
   <div
     style={{
       marginBottom: '12px',
-      fontSize: '20px',
-      fontWeight: 'bold',
-    }}
-  >
-    {currentEnd}エンド　{currentThrow}投目 / 全{maxEnds}エンド
-  </div>
-
-  <button
-    onClick={() => {
-      setSettingsStartEnd(currentEnd)
-      setSettingsScoreSelf(String(scoreSelf))
-      setSettingsScoreOpponent(String(scoreOpponent))
-      setShowMatchSettings((current) => !current)
-    }}
-    style={{
-      marginBottom: '12px',
-      padding: '8px 12px',
+      padding: '10px 12px',
       borderRadius: '8px',
-      border: '1px solid #cbd5e1',
-      background: '#fff',
+      background: '#f8fafc',
+      border: '1px solid #e2e8f0',
     }}
   >
-    設定
-  </button>
+    <div style={{ fontSize: '12px', color: '#475569', marginBottom: '4px' }}>
+      {selfTeamName} vs {opponentTeamName}
+    </div>
+    <div style={{ fontSize: '20px', fontWeight: 'bold' }}>
+      {currentEnd}エンド　{currentThrow}投目 / 全{maxEnds}エンド
+    </div>
+    {teamPlayers.length > 0 && (
+      <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>
+        選手: {teamPlayers.join(' / ')}
+      </div>
+    )}
+  </div>
 
   {showMatchSettings && (
     <div
@@ -1241,7 +1299,29 @@ const handlePendingStoneSvgPointerUp = (
         background: '#f8fafc',
       }}
     >
-      <strong>試合設定</strong>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+        }}
+      >
+        <strong>試合設定</strong>
+        <button
+          onClick={() => setShowMatchSettings(false)}
+          style={{
+            padding: '4px 8px',
+            borderRadius: '6px',
+            border: '1px solid #cbd5e1',
+            background: '#fff',
+            cursor: 'pointer',
+            fontSize: '12px',
+          }}
+        >
+          設定を閉じる
+        </button>
+      </div>
       <label style={{ display: 'block', marginTop: '10px' }}>
         開始するエンド
         <select
@@ -1318,6 +1398,9 @@ const handlePendingStoneSvgPointerUp = (
               <button onClick={() => handleDownloadSavedMatch(match)}>
                 JSON保存
               </button>
+              <button onClick={() => handleDeleteSavedMatch(match.id)}>
+                この試合を削除
+              </button>
             </div>
           ))}
         </div>
@@ -1327,132 +1410,221 @@ const handlePendingStoneSvgPointerUp = (
 
   <div
     style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      gap: '12px',
       marginBottom: '16px',
-      padding: '10px 12px',
-      borderRadius: '8px',
-      background: '#f8fafc',
-      border: '1px solid #e2e8f0',
-    }}
-  >
-    <span style={{ fontWeight: '600' }}>試合状況</span>
-    <strong>{matchWinner}</strong>
-  </div>
-
-  <div
-    style={{
-      marginBottom: '16px',
-      overflowX: 'auto',
-      border: '1px solid #e5e7eb',
-      borderRadius: '10px',
+      border: '1px solid #cbd5e1',
+      borderRadius: '12px',
       background: '#fff',
+      overflow: 'hidden',
     }}
   >
     <div
       style={{
         padding: '10px 12px',
-        fontWeight: '600',
-        borderBottom: '1px solid #e5e7eb',
+        fontWeight: '700',
+        borderBottom: '1px solid #e2e8f0',
+        background: '#f8fafc',
       }}
     >
       エンド別スコア
     </div>
-    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-      <thead>
-        <tr>
-          <th style={{ padding: '8px', textAlign: 'left' }}>エンド</th>
-          <th style={{ padding: '8px', textAlign: 'left' }}>結果</th>
-        </tr>
-      </thead>
-      <tbody>
-        {endResults.length === 0 ? (
-          <tr>
-            <td colSpan={2} style={{ padding: '8px', color: '#777' }}>
-              エンド結果はまだありません。
-            </td>
-          </tr>
-        ) : (
-          endResults.map((end, index) => (
-            <tr key={`${index + 1}-${end.result}-${end.points}`}>
-              <td style={{ padding: '8px' }}>{index + 1}エンド</td>
-              <td style={{ padding: '8px' }}>
-                {end.result === 'self'
-                  ? `自チーム ${end.points}点`
-                  : end.result === 'opponent'
-                    ? `相手 ${end.points}点`
-                    : 'ブランク'}
-              </td>
-            </tr>
-          ))
-        )}
-      </tbody>
-    </table>
-  </div>
 
-  <div
-    style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-      gap: '12px',
-      marginBottom: '16px',
-    }}
-  >
     <div
       style={{
-        border: '1px solid #dbeafe',
-        borderRadius: '10px',
-        background: '#eff6ff',
-        padding: '10px 12px',
+        display: 'grid',
+        gridTemplateColumns: '100px repeat(12, minmax(22px, 1fr))',
+        fontSize: '12px',
       }}
     >
       <div
         style={{
-          fontSize: '12px',
-          color: '#4b5563',
-          marginBottom: '4px',
+          padding: '8px 6px',
+          borderRight: '1px solid #e2e8f0',
+          borderBottom: '1px solid #e2e8f0',
+          background: '#f8fafc',
+          fontWeight: '700',
+        }}
+      />
+      {scoreColumns.map((end) => (
+        <div
+          key={`header-${end}`}
+          style={{
+            padding: '8px 2px',
+            textAlign: 'center',
+            borderRight: '1px solid #e2e8f0',
+            borderBottom: '1px solid #e2e8f0',
+            background: '#f8fafc',
+            fontWeight: '700',
+          }}
+        >
+          {end}
+        </div>
+      ))}
+      <div
+        style={{
+          padding: '8px 2px',
+          textAlign: 'center',
+          borderRight: '1px solid #e2e8f0',
+          borderBottom: '1px solid #e2e8f0',
+          background: '#f8fafc',
+          fontWeight: '700',
         }}
       >
-        自チーム
+        EE
       </div>
       <div
         style={{
-          fontSize: '28px',
+          padding: '8px 2px',
+          textAlign: 'center',
+          borderRight: '1px solid #e2e8f0',
+          borderBottom: '1px solid #e2e8f0',
+          background: '#f8fafc',
           fontWeight: '700',
+        }}
+      >
+        合計
+      </div>
+
+      <div
+        style={{
+          padding: '10px 8px',
+          borderRight: '1px solid #e2e8f0',
+          borderBottom: '1px solid #e2e8f0',
+          background: '#eef6ff',
+          fontWeight: '700',
+        }}
+      >
+        {selfTeamName}
+      </div>
+      {scoreColumns.map((end) => {
+        const endResult = endResults[end - 1]
+        const value = endResult
+          ? endResult.result === 'blank'
+            ? '0'
+            : endResult.result === 'self'
+              ? String(endResult.points)
+              : ''
+          : ''
+        return (
+          <div
+            key={`self-${end}`}
+            style={{
+              minHeight: '42px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '6px 2px',
+              borderRight: '1px solid #e2e8f0',
+              borderBottom: '1px solid #e2e8f0',
+              background: value ? '#eaf3ff' : '#fff',
+              fontWeight: '700',
+              color: '#1e3a8a',
+            }}
+          >
+            {value}
+          </div>
+        )
+      })}
+      <div
+        style={{
+          minHeight: '42px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '6px 2px',
+          borderRight: '1px solid #e2e8f0',
+          borderBottom: '1px solid #e2e8f0',
+          background: '#f8fafc',
+          color: '#64748b',
+        }}
+      >
+        -
+      </div>
+      <div
+        style={{
+          minHeight: '42px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '6px 2px',
+          borderRight: '1px solid #e2e8f0',
+          borderBottom: '1px solid #e2e8f0',
+          background: '#eaf3ff',
+          fontWeight: '700',
+          color: '#1e3a8a',
         }}
       >
         {scoreSelf}
       </div>
-    </div>
 
-    <div
-      style={{
-        border: '1px solid #fef3c7',
-        borderRadius: '10px',
-        background: '#fffbeb',
-        padding: '10px 12px',
-      }}
-    >
       <div
         style={{
-          fontSize: '12px',
-          color: '#4b5563',
-          marginBottom: '4px',
+          padding: '10px 8px',
+          borderRight: '1px solid #e2e8f0',
+          background: '#fff7ed',
+          fontWeight: '700',
         }}
       >
-        相手チーム
+        {opponentTeamName}
+      </div>
+      {scoreColumns.map((end) => {
+        const endResult = endResults[end - 1]
+        const value = endResult
+          ? endResult.result === 'blank'
+            ? '0'
+            : endResult.result === 'opponent'
+              ? String(endResult.points)
+              : ''
+          : ''
+        return (
+          <div
+            key={`opponent-${end}`}
+            style={{
+              minHeight: '42px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '6px 2px',
+              borderRight: '1px solid #e2e8f0',
+              background: value ? '#fff7ed' : '#fff',
+              fontWeight: '700',
+              color: '#9a5b00',
+            }}
+          >
+            {value}
+          </div>
+        )
+      })}
+      <div
+        style={{
+          minHeight: '42px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '6px 2px',
+          borderRight: '1px solid #e2e8f0',
+          background: '#f8fafc',
+          color: '#64748b',
+        }}
+      >
+        -
       </div>
       <div
         style={{
-          fontSize: '28px',
+          minHeight: '42px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '6px 2px',
+          borderRight: '1px solid #e2e8f0',
+          background: '#fff7ed',
           fontWeight: '700',
+          color: '#9a5b00',
         }}
       >
         {scoreOpponent}
       </div>
     </div>
+
   </div>
 
   <div
@@ -1792,6 +1964,25 @@ const handlePendingStoneSvgPointerUp = (
 >
   次のエンドへ
 </button>
+<button
+  onClick={() => {
+    setSettingsStartEnd(currentEnd)
+    setSettingsScoreSelf(String(scoreSelf))
+    setSettingsScoreOpponent(String(scoreOpponent))
+    setShowMatchSettings((current) => !current)
+  }}
+  style={{
+    marginLeft: 'auto',
+    padding: '6px 10px',
+    borderRadius: '6px',
+    border: '1px solid #cbd5e1',
+    background: '#fff',
+    cursor: 'pointer',
+    fontSize: '13px',
+  }}
+>
+  設定
+</button>
       </div>
 
       <p
@@ -1808,9 +1999,7 @@ const handlePendingStoneSvgPointerUp = (
       <svg
         className="sheet-board"
         ref={svgRef}
-        viewBox={`0 0 ${SHEET_WIDTH * SCALE} ${
-          PLAYING_LENGTH * SCALE
-        }`}
+        viewBox={`0 ${BOARD_TOP_Y * SCALE} ${SHEET_WIDTH * SCALE} ${BOARD_VIEW_HEIGHT * SCALE}`}
         width="100%"
         style={{
           display: 'block',
@@ -1821,19 +2010,10 @@ const handlePendingStoneSvgPointerUp = (
         {/* Sheet */}
         <rect
           x="0"
-          y="0"
+          y={BOARD_TOP_Y * SCALE}
           width={SHEET_WIDTH * SCALE}
-          height={PLAYING_LENGTH * SCALE}
-          fill="#f5fbfd"
-        />
-
-        {/* Free Guard Zone */}
-        <rect
-          x="0"
-          y="0"
-          width={SHEET_WIDTH * SCALE}
-          height={(TEE_TO_HOG - 1.219) * SCALE}
-          fill="#edf7fa"
+          height={BOARD_VIEW_HEIGHT * SCALE}
+          fill="#ffffff"
         />
 
         {/* House */}
@@ -1876,9 +2056,9 @@ const handlePendingStoneSvgPointerUp = (
         {/* Center line */}
         <line
           x1={centerX * SCALE}
-          y1="0"
+          y1={BOARD_TOP_Y * SCALE}
           x2={centerX * SCALE}
-          y2={PLAYING_LENGTH * SCALE}
+          y2={BOARD_BOTTOM_Y * SCALE}
           stroke="#c8d5da"
           strokeWidth="0.7"
         />
@@ -1906,9 +2086,9 @@ const handlePendingStoneSvgPointerUp = (
         {/* Hog line */}
         <line
           x1="0"
-          y1={(TEE_TO_HOG - 1.219) * SCALE}
+          y1={HOG_LINE_Y * SCALE}
           x2={SHEET_WIDTH * SCALE}
-          y2={(TEE_TO_HOG - 1.219) * SCALE}
+          y2={HOG_LINE_Y * SCALE}
           stroke="#aebdc3"
           strokeWidth="1.2"
         />
@@ -2106,74 +2286,303 @@ const handlePendingStoneSvgPointerUp = (
     />
   </div>
 
-  {throwHistory.length === 0 ? (
-    <div
-      style={{
-        fontSize: '14px',
-        color: '#777',
+  <div style={{ marginTop: '12px' }}>
+    <button
+      onClick={() => {
+        if (showShotPreview) {
+          setShowShotPreview(false)
+          setSelectedHistoryThrow(null)
+          setSelectedPreviewEnd(null)
+          return
+        }
+        setShowShotPreview(true)
       }}
-    >
-      まだ記録された投球はありません。
-    </div>
-  ) : (
-    <div
       style={{
-        display: 'flex',
-        gap: '8px',
-        flexWrap: 'wrap',
-      }}
-    >
-      {throwHistory.map((record) => (
-        <button
-          key={`${record.endNumber}-${record.throwNumber}`}
-          onClick={() =>
-            handleHistorySelect(record.endNumber, record.throwNumber)
-          }
-          style={{
-            padding: '8px 12px',
-            borderRadius: '8px',
-            border:
-              selectedHistoryThrow === record.throwNumber
-                ? '2px solid #2878d7'
-                : '1px solid #ccc',
-            background:
-              selectedHistoryThrow === record.throwNumber
-                ? '#eef6ff'
-                : '#fff',
-            cursor: 'pointer',
-          }}
-        >
-          {record.endNumber}エンド {record.throwNumber}投目
-        </button>
-      ))}
-    </div>
-  )}
-
-  {selectedHistoryThrow !== null && (
-    <div
-      style={{
-        marginTop: '12px',
-        padding: '10px 12px',
+        padding: '8px 12px',
         borderRadius: '8px',
-        background: '#eef6ff',
-        border: '1px solid #cfe3ff',
-        fontSize: '14px',
+        border: '1px solid #cbd5e1',
+        background: '#fff',
+        cursor: 'pointer',
+        fontWeight: '600',
       }}
     >
-      選択中の投球：{selectedHistoryThrow}投目 / ショット：
-      {
-        throwHistory.find(
-          (record) => record.throwNumber === selectedHistoryThrow,
-        )?.shotType ?? '未記録'
-      }
-      / 評価：
-      {
-        throwHistory.find(
-          (record) => record.throwNumber === selectedHistoryThrow,
-        )?.rating ?? 0
-      }
-    </div>
-  )}
+      ショットプレビュー
+    </button>
+
+      {showShotPreview && (
+      <div
+        style={{
+          marginTop: '12px',
+          padding: '12px',
+          borderRadius: '8px',
+          background: '#f8fafc',
+          border: '1px solid #e2e8f0',
+        }}
+      >
+        {throwHistory.length === 0 ? (
+          <div style={{ color: '#777', fontSize: '14px' }}>
+            まだ記録された投球はありません。
+          </div>
+        ) : (
+          <>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '8px',
+                marginBottom: '12px',
+              }}
+            >
+              {Array.from(
+                new Set(throwHistory.map((record) => record.endNumber)),
+              )
+                .sort((a, b) => a - b)
+                .map((endNumber) => (
+                  <button
+                    key={endNumber}
+                    onClick={() => {
+                      const firstRecord = throwHistory.find(
+                        (record) => record.endNumber === endNumber,
+                      )
+                      setSelectedPreviewEnd(endNumber)
+                      setSelectedHistoryThrow(
+                        firstRecord ? firstRecord.throwNumber : null,
+                      )
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border:
+                        selectedPreviewEnd === endNumber
+                          ? '2px solid #2878d7'
+                          : '1px solid #cbd5e1',
+                      background:
+                        selectedPreviewEnd === endNumber ? '#eaf3ff' : '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {endNumber}エンド
+                  </button>
+                ))}
+            </div>
+
+            {selectedPreviewEnd !== null && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '8px',
+                  marginBottom: '12px',
+                }}
+              >
+                {throwHistory
+                  .filter((record) => record.endNumber === selectedPreviewEnd)
+                  .sort((a, b) => a.throwNumber - b.throwNumber)
+                  .map((record) => (
+                    <button
+                      key={`${record.endNumber}-${record.throwNumber}`}
+                      onClick={() => handleHistorySelect(record.endNumber, record.throwNumber)}
+                      style={{
+                        padding: '7px 10px',
+                        borderRadius: '8px',
+                        border:
+                          selectedHistoryThrow === record.throwNumber
+                            ? '2px solid #2878d7'
+                            : '1px solid #cbd5e1',
+                        background:
+                          selectedHistoryThrow === record.throwNumber ? '#eaf3ff' : '#fff',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {record.throwNumber}投目
+                    </button>
+                  ))}
+              </div>
+            )}
+
+            {selectedHistoryThrow !== null &&
+              (() => {
+                const record = throwHistory.find(
+                  (item) =>
+                    item.endNumber === selectedPreviewEnd &&
+                    item.throwNumber === selectedHistoryThrow,
+                )
+
+                if (!record) {
+                  return null
+                }
+
+                return (
+                  <div
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      background: '#fff',
+                      border: '1px solid #cfe3ff',
+                      fontSize: '14px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '16px',
+                        alignItems: 'flex-start',
+                      }}
+                    >
+                      <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                        <div style={{ fontWeight: '700', marginBottom: '6px' }}>
+                          {record.endNumber}エンド {record.throwNumber}投目
+                        </div>
+                        <div>ショット: {record.shotType}</div>
+                        <div>評価: {record.rating}/5</div>
+                        <div style={{ whiteSpace: 'pre-wrap', marginTop: '6px' }}>
+                          {record.note || 'メモなし'}
+                        </div>
+                        <button
+                          onClick={handleEditSelectedPreview}
+                          style={{
+                            marginTop: '10px',
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            border: '1px solid #2878d7',
+                            background: '#eaf3ff',
+                            cursor: 'pointer',
+                            fontWeight: '600',
+                          }}
+                        >
+                          修正をする
+                        </button>
+                      </div>
+
+                      <div
+                        style={{
+                          flex: '0 1 220px',
+                          width: '220px',
+                          maxWidth: '100%',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            color: '#64748b',
+                            marginBottom: '4px',
+                          }}
+                        >
+                          この投球時点のハウス
+                        </div>
+                        <svg
+                          viewBox={`0 ${BOARD_TOP_Y * SCALE} ${SHEET_WIDTH * SCALE} ${BOARD_VIEW_HEIGHT * SCALE}`}
+                          width="100%"
+                          role="img"
+                          aria-label={`${record.endNumber}エンド ${record.throwNumber}投目のハウス`}
+                          style={{
+                            display: 'block',
+                            aspectRatio: `${SHEET_WIDTH} / ${BOARD_VIEW_HEIGHT}`,
+                            background: '#ffffff',
+                            border: '1px solid #d7e2e7',
+                            borderRadius: '6px',
+                          }}
+                        >
+                          <rect
+                            x="0"
+                            y={BOARD_TOP_Y * SCALE}
+                            width={SHEET_WIDTH * SCALE}
+                            height={BOARD_VIEW_HEIGHT * SCALE}
+                            fill="#ffffff"
+                          />
+                          <circle
+                            cx={centerX * SCALE}
+                            cy={houseCenterY * SCALE}
+                            r={HOUSE_RADII[0] * SCALE}
+                            fill="#e8f3f7"
+                            stroke="#c8d5da"
+                            strokeWidth="0.7"
+                          />
+                          <circle
+                            cx={centerX * SCALE}
+                            cy={houseCenterY * SCALE}
+                            r={HOUSE_RADII[1] * SCALE}
+                            fill="#ffffff"
+                            stroke="#c8d5da"
+                            strokeWidth="0.7"
+                          />
+                          <circle
+                            cx={centerX * SCALE}
+                            cy={houseCenterY * SCALE}
+                            r={HOUSE_RADII[2] * SCALE}
+                            fill="#e8f3f7"
+                            stroke="#c8d5da"
+                            strokeWidth="0.7"
+                          />
+                          <circle
+                            cx={centerX * SCALE}
+                            cy={houseCenterY * SCALE}
+                            r={HOUSE_RADII[3] * SCALE}
+                            fill="#ffffff"
+                            stroke="#c8d5da"
+                            strokeWidth="0.7"
+                          />
+                          <line
+                            x1={centerX * SCALE}
+                            y1={BOARD_TOP_Y * SCALE}
+                            x2={centerX * SCALE}
+                            y2={BOARD_BOTTOM_Y * SCALE}
+                            stroke="#c8d5da"
+                            strokeWidth="0.7"
+                          />
+                          <line
+                            x1="0"
+                            y1={houseCenterY * SCALE}
+                            x2={SHEET_WIDTH * SCALE}
+                            y2={houseCenterY * SCALE}
+                            stroke="#c8d5da"
+                            strokeWidth="0.7"
+                          />
+                          <line
+                            x1="0"
+                            y1="0"
+                            x2={SHEET_WIDTH * SCALE}
+                            y2="0"
+                            stroke="#c8d5da"
+                            strokeWidth="0.7"
+                          />
+                          <line
+                            x1="0"
+                            y1={HOG_LINE_Y * SCALE}
+                            x2={SHEET_WIDTH * SCALE}
+                            y2={HOG_LINE_Y * SCALE}
+                            stroke="#aebdc3"
+                            strokeWidth="1.2"
+                          />
+                          {record.stones
+                            .filter((stone) => !stone.out)
+                            .map((stone) => (
+                              <circle
+                                key={stone.id}
+                                cx={stone.x * SCALE}
+                                cy={stone.y * SCALE}
+                                r="9"
+                                fill={
+                                  stone.color === 'red' ? '#df4b4b' : '#f2d94e'
+                                }
+                                stroke={
+                                  stone.color === 'red' ? '#b93636' : '#c5a800'
+                                }
+                                strokeWidth="1.2"
+                              />
+                            ))}
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
+          </>
+        )}
+      </div>
+    )}
+  </div>
 </div>
     </div>
   )

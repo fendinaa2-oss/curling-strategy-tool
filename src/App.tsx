@@ -27,9 +27,6 @@ function App() {
 
   const handleStartMatch = () => {
     setMatchStarted(true)
-    alert(
-      `${format === 'four-person' ? '4人制' : 'Mixed Doubles'}・${endCount}エンドで試合を開始します。`,
-    )
   }
 
   return (
@@ -198,7 +195,16 @@ function App() {
           </button>
         </div>
       </section>}
-      {matchStarted && <CurlingSheet matchFormat={format} />}
+      {matchStarted && (
+        <CurlingSheet
+          matchFormat={format}
+          teamColor={teamColor}
+          teamName={teamName}
+          opponentName={opponentName}
+          playerNames={playerNames}
+          initialHammerTeam={hammer === 'self' ? 'self' : 'opponent'}
+        />
+      )}
     </main>
   )
 }
