@@ -244,6 +244,7 @@ const [settingsScoreSelf, setSettingsScoreSelf] = useState('0')
 const [settingsScoreOpponent, setSettingsScoreOpponent] = useState('0')
 const [matchNote, setMatchNote] = useState('')
 const [savedMatches, setSavedMatches] = useState<SavedMatch[]>([])
+const [scrollPosition, setScrollPosition] = useState(0)
 
 const [undoHistory, setUndoHistory] = useState<UndoState[]>([])
 
@@ -266,6 +267,36 @@ const [pendingStone, setPendingStone] =
 
   const svgRef = useRef<SVGSVGElement | null>(null)
   const pendingStoneDragRef = useRef(false)
+
+  useEffect(() => {
+    const updateScrollPosition = () => {
+      const scrollableHeight =
+        document.documentElement.scrollHeight - window.innerHeight
+      setScrollPosition(
+        scrollableHeight > 0
+          ? Math.round((window.scrollY / scrollableHeight) * 1000) / 10
+          : 0,
+      )
+    }
+
+    updateScrollPosition()
+    window.addEventListener('scroll', updateScrollPosition, { passive: true })
+    window.addEventListener('resize', updateScrollPosition)
+
+    return () => {
+      window.removeEventListener('scroll', updateScrollPosition)
+      window.removeEventListener('resize', updateScrollPosition)
+    }
+  }, [])
+
+  const handleScrollRailChange = (value: string) => {
+    const scrollableHeight =
+      document.documentElement.scrollHeight - window.innerHeight
+    window.scrollTo({
+      top: (Number(value) / 100) * Math.max(0, scrollableHeight),
+      behavior: 'auto',
+    })
+  }
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
@@ -1761,6 +1792,7 @@ const handlePendingStoneSvgPointerUp = (
     <div className="curling-sheet">
   {!showEndResultPage && <>
   <div
+    className="scoreboard"
     style={{
       marginBottom: '12px',
       padding: '10px 12px',
@@ -2525,6 +2557,7 @@ const handlePendingStoneSvgPointerUp = (
   </>}
 
       <div
+        className="sheet-controls"
   style={{
     display: 'flex',
     gap: '8px',
@@ -3332,6 +3365,16 @@ const handlePendingStoneSvgPointerUp = (
         )}
       </div>
     )}
+    <input
+      className="scroll-rail"
+      type="range"
+      min="0"
+      max="100"
+      step="0.1"
+      value={scrollPosition}
+      onChange={(event) => handleScrollRailChange(event.target.value)}
+      aria-label="ページをスクロール"
+    />
   </div>
 </div>
     </div>

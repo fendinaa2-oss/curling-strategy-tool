@@ -246,6 +246,45 @@ input:focus {
   object-fit: contain;
 }
 
+.scroll-rail {
+  position: fixed;
+  z-index: 20;
+  top: 18vh;
+  right: 4px;
+  width: 28px;
+  height: 58vh;
+  margin: 0;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  accent-color: #64748b;
+  opacity: 0.72;
+  touch-action: none;
+}
+
+.scroll-rail::-webkit-slider-runnable-track {
+  width: 6px;
+  border-radius: 999px;
+  background: #d4dbe1;
+}
+
+.scroll-rail::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: #64748b;
+  box-shadow: 0 1px 4px rgba(23, 32, 42, 0.28);
+  appearance: none;
+}
+
+@media (max-width: 600px) {
+  .scroll-rail {
+    right: 1px;
+    width: 24px;
+    height: 52vh;
+  }
+}
+
 @media (min-width: 601px) and (max-width: 999px) {
   .start-screen {
     padding: 32px 20px 48px;
@@ -355,5 +394,74 @@ input:focus {
 
   .match-summary {
     gap: 14px;
+  }
+}
+
+@media (orientation: landscape) and (min-width: 700px) {
+  .curling-sheet {
+    display: grid;
+    grid-template-columns: minmax(300px, 42%) minmax(0, 58%);
+    gap: 10px 14px;
+    width: 100%;
+    max-width: 1280px;
+    padding: 8px 14px 14px;
+  }
+
+  .curling-sheet > :not(.sheet-board):not(.throw-log) {
+    grid-column: 1 / -1;
+  }
+
+  .curling-sheet > .scoreboard {
+    grid-column: 1 / -1;
+    margin-bottom: 4px !important;
+  }
+
+  .scoreboard > div:last-child {
+    overflow-x: hidden;
+  }
+
+  .scoreboard > div:last-child > div {
+    min-height: 30px !important;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+    font-size: 11px;
+  }
+
+  .curling-sheet > .sheet-controls {
+    grid-column: 1 / -1;
+    margin-bottom: 2px !important;
+    gap: 5px !important;
+  }
+
+  .sheet-controls button {
+    padding: 6px 10px !important;
+    font-size: 12px;
+  }
+
+  .curling-sheet > .sheet-board {
+    grid-column: 1;
+    grid-row: span 2;
+    width: 100% !important;
+    max-height: calc(100vh - 190px);
+    object-fit: contain;
+    align-self: start;
+  }
+
+  .curling-sheet > .throw-log {
+    grid-column: 2;
+    grid-row: span 3;
+    min-width: 0;
+    max-height: calc(100vh - 190px);
+    margin-top: 0 !important;
+    overflow-y: auto;
+  }
+
+  .throw-log > div {
+    padding: 7px !important;
+    margin-bottom: 7px !important;
+  }
+
+  .throw-log textarea {
+    min-height: 38px !important;
   }
 }
