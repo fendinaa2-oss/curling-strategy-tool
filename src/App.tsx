@@ -5,9 +5,21 @@ import './App.css'
 type MatchFormat = 'four-person' | 'mixed-doubles'
 type TeamColor = 'red' | 'yellow'
 type Hammer = 'self' | 'opponent'
+type MixedDoublesGuardPosition =
+  | 'A1-house'
+  | 'A1-hog'
+  | 'A2-house'
+  | 'A2-hog'
+  | 'A3-house'
+  | 'A3-hog'
+  | 'A4-house'
+  | 'A4-hog'
 
 function App() {
   const [matchStarted, setMatchStarted] = useState(false)
+  const [showMixedDoublesSetup, setShowMixedDoublesSetup] = useState(false)
+  const [mixedDoublesGuardPosition, setMixedDoublesGuardPosition] =
+    useState<MixedDoublesGuardPosition>('A2-house')
   const [format, setFormat] = useState<MatchFormat>('four-person')
   const [teamColor, setTeamColor] = useState<TeamColor>('red')
   const [hammer, setHammer] = useState<Hammer>('self')
@@ -26,12 +38,22 @@ function App() {
   }
 
   const handleStartMatch = () => {
+    if (format === 'mixed-doubles') {
+      setShowMixedDoublesSetup(true)
+      return
+    }
+
+    setMatchStarted(true)
+  }
+
+  const handleStartMixedDoubles = () => {
+    setShowMixedDoublesSetup(false)
     setMatchStarted(true)
   }
 
   return (
     <main className="app">
-      {!matchStarted && <section className="start-screen">
+      {!matchStarted && !showMixedDoublesSetup && <section className="start-screen">
         <header className="app-header">
           <p className="app-label">CURLING</p>
           <h1>Curling Strategy Tool</h1>
@@ -229,6 +251,86 @@ function App() {
           </button>
         </div>
       </section>}
+      {!matchStarted && showMixedDoublesSetup && (
+        <section className="start-screen">
+          <header className="app-header">
+            <p className="app-label">MIXED DOUBLES</p>
+            <h1>置き石の設定</h1>
+            <p className="app-description">
+              1エンド目の開始前に、先行チームのガード位置を選択してください。
+            </p>
+          </header>
+
+          <div className="settings-card">
+            <div className="setting-section">
+              <h2>先行チームの置き石</h2>
+              <p className="setting-note">
+                センターライン上のA〜D各ポイントについて、ハウス側・ホッグ側から1つ選びます。
+              </p>
+              <div className="choice-grid two-columns">
+                {([
+                  ['A1-house', 'A 手前', 'ハウス側 / 4\'6\"'],
+                  ['A1-hog', 'A 奥', 'ホッグ側 / 4\'6\"'],
+                  ['A2-house', 'B 手前', 'ハウス側 / 6\'6\"'],
+                  ['A2-hog', 'B 奥', 'ホッグ側 / 6\'6\"'],
+                  ['A3-house', 'C 手前', 'ハウス側 / 8\'6\"'],
+                  ['A3-hog', 'C 奥', 'ホッグ側 / 8\'6\"'],
+                  ['A4-house', 'D 手前', 'ハウス側 / 10\'6\"'],
+                  ['A4-hog', 'D 奥', 'ホッグ側 / 10\'6\"'],
+                ] as const).map(([value, label, detail]) => (
+                  <button
+                    key={value}
+                    className={`choice-button ${
+                      mixedDoublesGuardPosition === value ? 'selected' : ''
+                    }`}
+                    onClick={() => setMixedDoublesGuardPosition(value)}
+                  >
+                    <strong>{label}</strong>
+                    <span>{detail}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="setting-section">
+              <h2>後攻チームの置き石</h2>
+              <p className="setting-note">
+                ハウス内のセンターライン上、4-foot円の後端に石の後端を合わせるB位置に配置します。
+              </p>
+              <div className="match-summary">
+                <div>
+                  <span>先行チーム</span>
+                  <strong>{hammer === 'self' ? '相手チーム' : '自チーム'}</strong>
+                </div>
+                <div>
+                  <span>後攻チーム</span>
+                  <strong>{hammer === 'self' ? '自チーム' : '相手チーム'}</strong>
+                </div>
+                <div>
+                  <span>ガード</span>
+                  <strong>{mixedDoublesGuardPosition}</strong>
+                </div>
+                <div>
+                  <span>ハウス</span>
+                  <strong>B位置</strong>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                className="choice-button"
+                onClick={() => setShowMixedDoublesSetup(false)}
+              >
+                戻る
+              </button>
+              <button className="start-button" onClick={handleStartMixedDoubles}>
+                置き石を配置して試合開始
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
       {matchStarted && (
         <CurlingSheet
           matchFormat={format}
@@ -239,6 +341,9 @@ function App() {
           opponentName={opponentName}
           playerNames={playerNames}
           initialHammerTeam={hammer === 'self' ? 'self' : 'opponent'}
+          mixedDoublesGuardPosition={
+            format === 'mixed-doubles' ? mixedDoublesGuardPosition : undefined
+          }
         />
       )}
     </main>

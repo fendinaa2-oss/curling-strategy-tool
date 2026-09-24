@@ -1,0 +1,18 @@
+{
+  "name": "Curling Strategy Tool",
+  "short_name": "Curling Strategy",
+  "description": "カーリングの試合中の投球と戦略を記録するツール",
+  "lang": "ja",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f0e8",
+  "theme_color": "#f5f0e8",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

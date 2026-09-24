@@ -5,6 +5,7 @@ type EndResult = 'self' | 'opponent' | 'blank'
 type EndScore = {
   result: EndResult
   points: number
+  powerPlay?: boolean
 }
 
 type SavedMatch = {
@@ -17,11 +18,23 @@ type SavedMatch = {
   scoreSelf: number
   scoreOpponent: number
   endResults: EndScore[]
+  powerPlayUsedTeams?: Record<PowerPlayTeam, boolean>
   throwHistory: ThrowRecord[]
   matchNote: string
 }
 
 type TeamColor = 'red' | 'yellow'
+type MixedDoublesGuardPosition =
+  | 'A1-house'
+  | 'A1-hog'
+  | 'A2-house'
+  | 'A2-hog'
+  | 'A3-house'
+  | 'A3-hog'
+  | 'A4-house'
+  | 'A4-hog'
+type PowerPlaySide = 'left' | 'right'
+type PowerPlayTeam = 'self' | 'opponent'
 type ShotType =
   | 'Guard'
   | 'Draw'
@@ -58,6 +71,8 @@ type UndoState = {
   scoreOpponent: number
   hammerTeam: 'self' | 'opponent'
   endResults: EndScore[]
+  powerPlayEnds: number[]
+  powerPlayUsedTeams: Record<PowerPlayTeam, boolean>
   endPoints: number
   pendingStone: Stone | null
   nextStoneId: number
@@ -91,6 +106,67 @@ const SHOT_TYPES: ShotType[] = [
   'Other',
 ]
 
+const MIXED_DOUBLES_GUARD_DISTANCES: Record<
+  MixedDoublesGuardPosition,
+  number
+> = {
+  'A1-house': 1.372 - 0.457,
+  'A1-hog': 1.372 + 0.457,
+  'A2-house': 1.981 - 0.457,
+  'A2-hog': 1.981 + 0.457,
+  'A3-house': 2.591 - 0.457,
+  'A3-hog': 2.591 + 0.457,
+  'A4-house': 3.2 - 0.457,
+  'A4-hog': 3.2 + 0.457,
+}
+
+const getOpponentColor = (teamColor: TeamColor): TeamColor =>
+  teamColor === 'red' ? 'yellow' : 'red'
+
+const getFirstThrowColor = (
+  teamColor: TeamColor,
+  hammerTeam: 'self' | 'opponent',
+): TeamColor =>
+  hammerTeam === 'self' ? getOpponentColor(teamColor) : teamColor
+
+const createMixedDoublesPositionedStones = (
+  guardPosition: MixedDoublesGuardPosition,
+  teamColor: TeamColor,
+  hammerTeam: 'self' | 'opponent',
+  startingId = 1,
+  powerPlaySide?: PowerPlaySide,
+): Stone[] => {
+  const houseStoneColor =
+    hammerTeam === 'self' ? teamColor : getOpponentColor(teamColor)
+  const guardStoneColor = getOpponentColor(houseStoneColor)
+  const houseStoneY = powerPlaySide
+    ? TEE_TO_BACK - 0.145
+    : TEE_TO_BACK - 0.61 + 0.145
+  const guardStoneY =
+    TEE_TO_BACK + HOUSE_RADII[0] + MIXED_DOUBLES_GUARD_DISTANCES[guardPosition]
+  const positionedX = powerPlaySide
+    ? SHEET_WIDTH / 2 +
+      (powerPlaySide === 'left' ? -HOUSE_RADII[1] : HOUSE_RADII[1])
+    : SHEET_WIDTH / 2
+
+  return [
+    {
+      id: startingId,
+      color: guardStoneColor,
+      x: positionedX,
+      y: guardStoneY,
+      out: false,
+    },
+    {
+      id: startingId + 1,
+      color: houseStoneColor,
+      x: positionedX,
+      y: houseStoneY,
+      out: false,
+    },
+  ]
+}
+
 function CurlingSheet({
   matchFormat,
   endCount,
@@ -100,6 +176,7 @@ function CurlingSheet({
   opponentName,
   playerNames,
   initialHammerTeam,
+  mixedDoublesGuardPosition,
 }: {
   matchFormat: MatchFormat
   endCount: number
@@ -109,10 +186,18 @@ function CurlingSheet({
   opponentName: string
   playerNames: string[]
   initialHammerTeam: 'self' | 'opponent'
+  mixedDoublesGuardPosition?: MixedDoublesGuardPosition
 }) {
-const [stones, setStones] = useState<Stone[]>([
- 
-])
+const initialPositionedStones =
+  matchFormat === 'mixed-doubles' && mixedDoublesGuardPosition
+    ? createMixedDoublesPositionedStones(
+        mixedDoublesGuardPosition,
+        teamColor,
+        initialHammerTeam,
+      )
+    : []
+
+const [stones, setStones] = useState<Stone[]>(initialPositionedStones)
 
 const [currentThrow, setCurrentThrow] = useState(1)
 const [currentEnd, setCurrentEnd] = useState(1)
@@ -122,6 +207,7 @@ const [throwHistory, setThrowHistory] =
 
   const [selectedHistoryThrow, setSelectedHistoryThrow] =
   useState<number | null>(null)
+  const [editingThrowKey, setEditingThrowKey] = useState<string | null>(null)
 const [showShotPreview, setShowShotPreview] = useState(false)
 const [selectedPreviewEnd, setSelectedPreviewEnd] = useState<number | null>(null)
 
@@ -135,8 +221,19 @@ const [scoreOpponent, setScoreOpponent] = useState(0)
 const [hammerTeam, setHammerTeam] = useState<'self' | 'opponent'>(initialHammerTeam)
 const [endResult, setEndResult] = useState<EndResult | null>(null)
 const [endResults, setEndResults] = useState<EndScore[]>([])
+const [powerPlayEnds, setPowerPlayEnds] = useState<number[]>([])
+const [powerPlayUsedTeams, setPowerPlayUsedTeams] = useState<
+  Record<PowerPlayTeam, boolean>
+>({ self: false, opponent: false })
 const [endPoints, setEndPoints] = useState(1)
 const [showEndResultPage, setShowEndResultPage] = useState(false)
+const [showPowerPlaySetup, setShowPowerPlaySetup] = useState(false)
+const [powerPlaySide, setPowerPlaySide] = useState<PowerPlaySide>('left')
+const [powerPlayTeam, setPowerPlayTeam] = useState<PowerPlayTeam>('self')
+const [powerPlaySideForNextEnd, setPowerPlaySideForNextEnd] =
+  useState<PowerPlaySide | null>(null)
+const powerPlayUsed =
+  powerPlayUsedTeams.self && powerPlayUsedTeams.opponent
 const [showMatchSettings, setShowMatchSettings] = useState(false)
 const [showShotRate, setShowShotRate] = useState(false)
 const [selectedShotRateMatchId, setSelectedShotRateMatchId] =
@@ -156,14 +253,16 @@ const [undoHistory, setUndoHistory] = useState<UndoState[]>([])
 
 const [pendingStone, setPendingStone] =
   useState<Stone | null>({
-    id: 1,
-    color: 'red',
+    id: initialPositionedStones.length + 1,
+    color: getFirstThrowColor(teamColor, initialHammerTeam),
     x: WAITING_STONE_X,
     y: WAITING_STONE_Y,
     out: false,
   })
 
-  const [nextStoneId, setNextStoneId] = useState(2)
+  const [nextStoneId, setNextStoneId] = useState(
+    initialPositionedStones.length + 1,
+  )
 
   const svgRef = useRef<SVGSVGElement | null>(null)
   const pendingStoneDragRef = useRef(false)
@@ -188,6 +287,8 @@ const [pendingStone, setPendingStone] =
         hammerTeam?: 'self' | 'opponent'
         endResult?: EndResult | null
         endResults?: EndScore[]
+        powerPlayEnds?: number[]
+        powerPlayUsedTeams?: Record<PowerPlayTeam, boolean>
         endPoints?: number
         matchNote?: string
       }
@@ -241,6 +342,14 @@ const [pendingStone, setPendingStone] =
         setEndResults(parsed.endResults)
       }
 
+      if (parsed.powerPlayEnds) {
+        setPowerPlayEnds(parsed.powerPlayEnds)
+      }
+
+      if (parsed.powerPlayUsedTeams) {
+        setPowerPlayUsedTeams(parsed.powerPlayUsedTeams)
+      }
+
       if (typeof parsed.endPoints === 'number') {
         setEndPoints(parsed.endPoints)
       }
@@ -280,12 +389,14 @@ const [pendingStone, setPendingStone] =
       hammerTeam,
       endResult,
       endResults,
+      powerPlayEnds,
+      powerPlayUsedTeams,
       endPoints,
       matchNote,
     }
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  }, [stones, currentEnd, currentThrow, pendingStone, throwHistory, nextStoneId, scoreSelf, scoreOpponent, hammerTeam, endResult, endResults, endPoints, matchNote])
+  }, [stones, currentEnd, currentThrow, pendingStone, throwHistory, nextStoneId, scoreSelf, scoreOpponent, hammerTeam, endResult, endResults, powerPlayEnds, powerPlayUsedTeams, endPoints, matchNote])
 
   const getPositionFromPointer = (
     event: React.PointerEvent,
@@ -296,16 +407,18 @@ const [pendingStone, setPendingStone] =
       return null
     }
 
-    const rect = svg.getBoundingClientRect()
+    const screenCtm = svg.getScreenCTM()
 
-    const x =
-      ((event.clientX - rect.left) / rect.width) *
-      SHEET_WIDTH
+    if (!screenCtm) {
+      return null
+    }
 
-    const y =
-      BOARD_TOP_Y +
-      ((event.clientY - rect.top) / rect.height) *
-        BOARD_VIEW_HEIGHT
+    const point = svg.createSVGPoint()
+    point.x = event.clientX
+    point.y = event.clientY
+    const svgPoint = point.matrixTransform(screenCtm.inverse())
+    const x = svgPoint.x / SCALE
+    const y = svgPoint.y / SCALE
 
     return {
       x: Math.max(
@@ -328,16 +441,20 @@ const [pendingStone, setPendingStone] =
       return null
     }
 
-    const rect = svg.getBoundingClientRect()
+    const screenCtm = svg.getScreenCTM()
+
+    if (!screenCtm) {
+      return null
+    }
+
+    const point = svg.createSVGPoint()
+    point.x = event.clientX
+    point.y = event.clientY
+    const svgPoint = point.matrixTransform(screenCtm.inverse())
 
     return {
-      x:
-        ((event.clientX - rect.left) / rect.width) *
-        SHEET_WIDTH,
-      y:
-        BOARD_TOP_Y +
-        ((event.clientY - rect.top) / rect.height) *
-          BOARD_VIEW_HEIGHT,
+      x: svgPoint.x / SCALE,
+      y: svgPoint.y / SCALE,
     }
   }
 
@@ -350,6 +467,8 @@ const [pendingStone, setPendingStone] =
     scoreOpponent,
     hammerTeam,
     endResults: endResults.map((item) => ({ ...item })),
+    powerPlayEnds: [...powerPlayEnds],
+    powerPlayUsedTeams: { ...powerPlayUsedTeams },
     endPoints,
     pendingStone: pendingStone
       ? { ...pendingStone }
@@ -390,6 +509,8 @@ const handleUndo = () => {
       ...item,
     })),
   )
+  setPowerPlayEnds([...previousState.powerPlayEnds])
+  setPowerPlayUsedTeams({ ...previousState.powerPlayUsedTeams })
   setEndPoints(previousState.endPoints)
   setPendingStone(
     previousState.pendingStone
@@ -450,7 +571,22 @@ const handleRecordThrow = () => {
 
   saveUndoState()
   setStones(nextStones)
-  setThrowHistory((current) => [...current, record])
+  setThrowHistory((current) => {
+    if (!editingThrowKey) {
+      return [...current, record]
+    }
+
+    const editingIndex = current.findIndex(
+      (item) => `${item.endNumber}-${item.throwNumber}` === editingThrowKey,
+    )
+
+    if (editingIndex === -1) {
+      return [...current, record]
+    }
+
+    return [...current.slice(0, editingIndex), record]
+  })
+  setEditingThrowKey(null)
   setSelectedPreviewEnd(currentEnd)
   setSelectedHistoryThrow(currentThrow)
   setShowShotPreview(true)
@@ -490,6 +626,75 @@ const handleNextEnd = () => {
   setShowEndResultPage(true)
 }
 
+const handleOpenPowerPlaySetup = () => {
+  const hasCurrentEndThrow = throwHistory.some(
+    (record) => record.endNumber === currentEnd,
+  )
+
+  const canApplyBeforeFirstThrow =
+    currentThrow === 1 && !hasCurrentEndThrow
+  const canApplyAfterEndResult =
+    showEndResultPage && currentThrow >= maxThrowsPerEnd
+
+  if (
+    matchFormat !== 'mixed-doubles' ||
+    (!canApplyBeforeFirstThrow && !canApplyAfterEndResult) ||
+    currentEnd >= maxEnds ||
+    powerPlayUsedTeams[powerPlayTeam]
+  ) {
+    return
+  }
+
+  setPowerPlaySideForNextEnd(null)
+  setShowPowerPlaySetup(true)
+}
+
+const handleApplyPowerPlay = () => {
+  if (
+    !powerPlaySide ||
+    currentEnd >= maxEnds ||
+    powerPlayUsedTeams[powerPlayTeam]
+  ) {
+    return
+  }
+
+  saveUndoState()
+
+  const hasCurrentEndThrow = throwHistory.some(
+    (record) => record.endNumber === currentEnd,
+  )
+
+  if (currentThrow === 1 && !hasCurrentEndThrow) {
+    const firstPositionedStoneId = stones[0]?.id ?? 1
+    const currentPositionedStones = createMixedDoublesPositionedStones(
+      mixedDoublesGuardPosition!,
+      teamColor,
+      hammerTeam,
+      firstPositionedStoneId,
+      powerPlaySide,
+    )
+
+    setStones(currentPositionedStones)
+    setPowerPlayEnds((current) =>
+      current.includes(currentEnd) ? current : [...current, currentEnd],
+    )
+    setPowerPlayUsedTeams((current) => ({
+      ...current,
+      [powerPlayTeam]: true,
+    }))
+    setShowPowerPlaySetup(false)
+    return
+  }
+
+  setPowerPlaySideForNextEnd(powerPlaySide)
+  setPowerPlayUsedTeams((current) => ({
+    ...current,
+    [powerPlayTeam]: true,
+  }))
+  setShowPowerPlaySetup(false)
+  setShowEndResultPage(true)
+}
+
 const handleConfirmEndResult = () => {
 
   if (!endResult) {
@@ -504,7 +709,11 @@ const handleConfirmEndResult = () => {
   saveUndoState()
   setEndResults((current) => [
     ...current,
-    { result: completedEndResult, points: completedEndPoints },
+    {
+      result: completedEndResult,
+      points: completedEndPoints,
+      powerPlay: powerPlayEnds.includes(currentEnd),
+    },
   ])
 
   if (completedEndResult === 'self') {
@@ -522,17 +731,41 @@ const handleConfirmEndResult = () => {
     return
   }
 
-  setStones([])
+  const nextHammerTeam =
+    completedEndResult === 'self'
+      ? 'opponent'
+      : completedEndResult === 'opponent'
+        ? 'self'
+        : hammerTeam
+  const positionedStoneStartingId = nextStoneId
+  const nextPowerPlaySide = powerPlaySideForNextEnd
+  const nextPositionedStones =
+    matchFormat === 'mixed-doubles' && mixedDoublesGuardPosition
+      ? createMixedDoublesPositionedStones(
+          mixedDoublesGuardPosition,
+          teamColor,
+          nextHammerTeam,
+          positionedStoneStartingId,
+          nextPowerPlaySide ?? undefined,
+        )
+      : []
+
+  setStones(nextPositionedStones)
   setCurrentEnd((current) => current + 1)
   setCurrentThrow(1)
   setSelectedHistoryThrow(null)
   setSelectedStoneId(null)
   setEndResult(null)
   setEndPoints(1)
+  if (nextPowerPlaySide) {
+    setPowerPlayEnds((current) => [...current, currentEnd + 1])
+  }
+  setPowerPlaySideForNextEnd(null)
   setShowEndResultPage(false)
+  setNextStoneId(positionedStoneStartingId + nextPositionedStones.length)
   setPendingStone({
-    id: nextStoneId,
-    color: 'red',
+    id: positionedStoneStartingId + nextPositionedStones.length,
+    color: getFirstThrowColor(teamColor, nextHammerTeam),
     x: WAITING_STONE_X,
     y: WAITING_STONE_Y,
     out: false,
@@ -559,8 +792,13 @@ const createSavedMatch = (
       (finalEndResult === 'opponent' ? finalPoints : 0),
     endResults: [
       ...endResults,
-      { result: finalEndResult, points: finalPoints },
+      {
+        result: finalEndResult,
+        points: finalPoints,
+        powerPlay: powerPlayEnds.includes(currentEnd),
+      },
     ],
+    powerPlayUsedTeams,
     throwHistory: throwHistory.map((record) => ({
       ...record,
       stones: record.stones.map((stone) => ({ ...stone })),
@@ -595,6 +833,18 @@ const handleLoadSavedMatch = (match: SavedMatch) => {
     match.endCount ?? (match.matchFormat === 'four-person' ? 10 : 8),
   )
   setEndResults(match.endResults)
+  const loadedPowerPlayEnds = match.endResults.reduce<number[]>(
+    (ends, result, index) =>
+      result.powerPlay ? [...ends, index + 1] : ends,
+    [],
+  )
+  setPowerPlayEnds(loadedPowerPlayEnds)
+  setPowerPlayUsedTeams(
+    match.powerPlayUsedTeams ??
+      (loadedPowerPlayEnds.length > 0
+        ? { self: true, opponent: false }
+        : { self: false, opponent: false }),
+  )
   setScoreSelf(match.scoreSelf)
   setScoreOpponent(match.scoreOpponent)
   setMatchNote(match.matchNote)
@@ -731,6 +981,9 @@ const handleApplyMatchSettings = () => {
     Math.min(maxEnds, settingsStartEnd),
   )
   const keptEndResults = endResults.slice(0, targetEnd - 1)
+  const keptPowerPlayEnds = powerPlayEnds.filter(
+    (end) => end < targetEnd,
+  )
   const keptHistory = throwHistory.filter(
     (record) => record.endNumber < targetEnd,
   )
@@ -751,6 +1004,13 @@ const handleApplyMatchSettings = () => {
   setCurrentThrow(1)
   setThrowHistory(keptHistory)
   setEndResults(keptEndResults)
+  setPowerPlayEnds(keptPowerPlayEnds)
+  setPowerPlayUsedTeams((current) => ({
+    self: keptPowerPlayEnds.length > 0 ? current.self : false,
+    opponent: keptPowerPlayEnds.length > 0 ? current.opponent : false,
+  }))
+  setPowerPlaySideForNextEnd(null)
+  setShowPowerPlaySetup(false)
   setScoreSelf(
     Number.isNaN(Number(settingsScoreSelf))
       ? recalculatedSelf
@@ -777,6 +1037,23 @@ const handleApplyMatchSettings = () => {
   setShowMatchSettings(false)
 }
 
+const handleApplyScoreboardCorrection = () => {
+  const correctedScoreSelf = Math.max(
+    0,
+    Math.floor(Number(settingsScoreSelf) || 0),
+  )
+  const correctedScoreOpponent = Math.max(
+    0,
+    Math.floor(Number(settingsScoreOpponent) || 0),
+  )
+
+  saveUndoState()
+  setScoreSelf(correctedScoreSelf)
+  setScoreOpponent(correctedScoreOpponent)
+  setSettingsScoreSelf(String(correctedScoreSelf))
+  setSettingsScoreOpponent(String(correctedScoreOpponent))
+}
+
 const handleHistorySelect = (endNumber: number, throwNumber: number) => {
   const record = throwHistory.find(
     (item) =>
@@ -793,19 +1070,46 @@ const handleHistorySelect = (endNumber: number, throwNumber: number) => {
 }
 
 const handleEditSelectedPreview = () => {
-  const record = throwHistory.find(
+  const recordIndex = throwHistory.findIndex(
     (item) =>
       item.endNumber === selectedPreviewEnd &&
       item.throwNumber === selectedHistoryThrow,
   )
 
-  if (!record) {
+  if (recordIndex === -1) {
     return
   }
 
+  const record = throwHistory[recordIndex]
+  const previousStones =
+    recordIndex > 0 &&
+    throwHistory[recordIndex - 1].endNumber === record.endNumber
+      ? throwHistory[recordIndex - 1].stones
+      : []
+  const previousStoneIds = new Set(previousStones.map((stone) => stone.id))
+  const addedStone = record.stones.find(
+    (stone) => !previousStoneIds.has(stone.id),
+  )
+  const keptHistory = throwHistory.slice(0, recordIndex)
+
   setCurrentEnd(record.endNumber)
   setCurrentThrow(record.throwNumber)
-  setStones(record.stones.map((stone) => ({ ...stone })))
+  setStones(previousStones.map((stone) => ({ ...stone })))
+  setPendingStone(
+    addedStone
+      ? { ...addedStone, id: nextStoneId, out: false }
+      : null,
+  )
+  setThrowHistory(keptHistory)
+  setNextStoneId((current) =>
+    Math.max(
+      current,
+      ...keptHistory.flatMap((item) =>
+        item.stones.map((stone) => stone.id + 1),
+      ),
+    ),
+  )
+  setEditingThrowKey(`${record.endNumber}-${record.throwNumber}`)
   setSelectedShotType(record.shotType)
   setSelectedRating(record.rating)
   setShotNote(record.note)
@@ -837,6 +1141,10 @@ const clearCurrentMatch = () => {
   setHammerTeam('self')
   setEndResult(null)
   setEndResults([])
+  setPowerPlayEnds([])
+  setPowerPlayUsedTeams({ self: false, opponent: false })
+  setPowerPlaySideForNextEnd(null)
+  setShowPowerPlaySetup(false)
   setEndPoints(1)
   setShowEndResultPage(false)
   setShowMatchSettings(false)
@@ -1117,6 +1425,16 @@ const handlePendingStoneSvgPointerUp = (
         : `${opponentTeamName} リード`
 
   const scoreColumns = Array.from({ length: maxEnds }, (_, index) => index + 1)
+  const isPowerPlayEnd = (end: number) => powerPlayEnds.includes(end)
+  const hasCurrentEndThrow = throwHistory.some(
+    (record) => record.endNumber === currentEnd,
+  )
+  const canApplyPowerPlay =
+          matchFormat === 'mixed-doubles' &&
+          !powerPlayUsedTeams[powerPlayTeam] &&
+    currentEnd < maxEnds &&
+    !hasCurrentEndThrow &&
+    (currentThrow === 1 || currentThrow >= maxThrowsPerEnd)
 
   if (matchFinished) {
     return (
@@ -1302,6 +1620,108 @@ const handlePendingStoneSvgPointerUp = (
           </div>
         )}
 
+        {matchFormat === 'mixed-doubles' &&
+          currentEnd < maxEnds &&
+          !powerPlayUsedTeams[powerPlayTeam] && (
+            <div style={{ marginBottom: '16px' }}>
+              {!showPowerPlaySetup && (
+                <button
+                  onClick={handleOpenPowerPlaySetup}
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid #d6a900',
+                    background: '#fff8d8',
+                    color: '#7a5b00',
+                    cursor: 'pointer',
+                    fontWeight: '700',
+                  }}
+                >
+                  この得点を確定してからPPを設定
+                </button>
+              )}
+
+              {showPowerPlaySetup && (
+                <div
+                  style={{
+                    padding: '12px',
+                    border: '1px solid #e4c44a',
+                    borderRadius: '10px',
+                    background: '#fffdf0',
+                  }}
+                >
+                  <strong>次のエンドのPP設定</strong>
+                  <div style={{ display: 'flex', gap: '8px', margin: '8px 0', flexWrap: 'wrap' }}>
+                    {(['self', 'opponent'] as const).map((team) => (
+                      <button
+                        key={team}
+                        onClick={() => setPowerPlayTeam(team)}
+                        disabled={powerPlayUsedTeams[team]}
+                        style={{
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          border: powerPlayTeam === team ? '2px solid #b58a00' : '1px solid #d9c77c',
+                          background: powerPlayUsedTeams[team] ? '#f3f3f3' : powerPlayTeam === team ? '#fff1a8' : '#fff',
+                          color: powerPlayUsedTeams[team] ? '#999' : '#222',
+                        }}
+                      >
+                        {team === 'self' ? '自チーム' : '相手チーム'}{powerPlayUsedTeams[team] ? '（使用済み）' : ''}
+                      </button>
+                    ))}
+                  </div>
+                  <p style={{ margin: '8px 0', fontSize: '13px', color: '#665200' }}>
+                    先ほどの得点を確定した後、次のエンドの置き石を左右どちら側へ移動します。
+                  </p>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {(['left', 'right'] as const).map((side) => (
+                      <button
+                        key={side}
+                        onClick={() => setPowerPlaySide(side)}
+                        style={{
+                          padding: '9px 16px',
+                          borderRadius: '8px',
+                          border:
+                            powerPlaySide === side
+                              ? '2px solid #b58a00'
+                              : '1px solid #d9c77c',
+                          background: powerPlaySide === side ? '#fff1a8' : '#fff',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {side === 'left' ? '左側' : '右側'}
+                      </button>
+                    ))}
+                    <button
+                      onClick={handleApplyPowerPlay}
+                      style={{
+                        padding: '9px 16px',
+                        borderRadius: '8px',
+                        border: '1px solid #b58a00',
+                        background: '#f7d84a',
+                        cursor: 'pointer',
+                        fontWeight: '700',
+                      }}
+                    >
+                      PPを適用
+                    </button>
+                    <button
+                      onClick={() => setShowPowerPlaySetup(false)}
+                      style={{
+                        padding: '9px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                        background: '#fff',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      キャンセル
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
         <button
           onClick={handleConfirmEndResult}
           disabled={!endResult}
@@ -1414,7 +1834,7 @@ const handlePendingStoneSvgPointerUp = (
         </select>
       </label>
       <label style={{ display: 'block', marginTop: '10px' }}>
-        自チーム得点
+        スコアボード修正: 自チーム得点
         <input
           type="number"
           min="0"
@@ -1424,7 +1844,7 @@ const handlePendingStoneSvgPointerUp = (
         />
       </label>
       <label style={{ display: 'block', marginTop: '10px' }}>
-        相手チーム得点
+        スコアボード修正: 相手チーム得点
         <input
           type="number"
           min="0"
@@ -1433,6 +1853,22 @@ const handlePendingStoneSvgPointerUp = (
           style={{ display: 'block', width: '100%', padding: '6px' }}
         />
       </label>
+      <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#64748b' }}>
+        スコアボードの合計だけを変更します。盤面や投球履歴は変更されません。
+      </p>
+      <button
+        onClick={handleApplyScoreboardCorrection}
+        style={{
+          marginTop: '10px',
+          padding: '9px 12px',
+          borderRadius: '8px',
+          border: '1px solid #2878d7',
+          background: '#eaf3ff',
+          cursor: 'pointer',
+        }}
+      >
+        スコアボードを修正
+      </button>
       <button
         onClick={handleApplyMatchSettings}
         style={{
@@ -1652,7 +2088,7 @@ const handlePendingStoneSvgPointerUp = (
             textAlign: 'center',
             borderRight: '1px solid #e2e8f0',
             borderBottom: '1px solid #e2e8f0',
-            background: '#f8fafc',
+            background: isPowerPlayEnd(end) ? '#fff4b8' : '#f8fafc',
             fontWeight: '700',
           }}
         >
@@ -1715,7 +2151,11 @@ const handlePendingStoneSvgPointerUp = (
               padding: '6px 2px',
               borderRight: '1px solid #e2e8f0',
               borderBottom: '1px solid #e2e8f0',
-              background: value ? '#eaf3ff' : '#fff',
+              background: isPowerPlayEnd(end)
+                ? '#fff4b8'
+                : value
+                  ? '#eaf3ff'
+                  : '#fff',
               fontWeight: '700',
               color: '#1e3a8a',
             }}
@@ -1785,7 +2225,11 @@ const handlePendingStoneSvgPointerUp = (
               justifyContent: 'center',
               padding: '6px 2px',
               borderRight: '1px solid #e2e8f0',
-              background: value ? '#fff7ed' : '#fff',
+              background: isPowerPlayEnd(end)
+                ? '#fff4b8'
+                : value
+                  ? '#fff7ed'
+                  : '#fff',
               fontWeight: '700',
               color: '#9a5b00',
             }}
@@ -2164,6 +2608,31 @@ const handlePendingStoneSvgPointerUp = (
 >
   次のエンドへ
 </button>
+{matchFormat === 'mixed-doubles' && (
+  <button
+    onClick={handleOpenPowerPlaySetup}
+    disabled={!canApplyPowerPlay}
+    style={{
+      padding: '8px 16px',
+      borderRadius: '8px',
+      border: '1px solid #d6a900',
+      background:
+        !canApplyPowerPlay
+          ? '#f3f3f3'
+          : '#fff8d8',
+      color:
+        !canApplyPowerPlay
+          ? '#999'
+          : '#7a5b00',
+      cursor:
+        !canApplyPowerPlay
+          ? 'default'
+          : 'pointer',
+    }}
+  >
+    {powerPlayUsed ? 'PP 2回使用済み' : 'PPを適用'}
+  </button>
+)}
 <button
   onClick={() => {
     setSettingsStartEnd(currentEnd)
@@ -2184,6 +2653,87 @@ const handlePendingStoneSvgPointerUp = (
   設定
 </button>
       </div>
+
+      {showPowerPlaySetup && (
+        <div
+          style={{
+            margin: '0 0 12px',
+            padding: '12px',
+            border: '1px solid #e4c44a',
+            borderRadius: '10px',
+            background: '#fffdf0',
+          }}
+        >
+          <strong>Power Play設定</strong>
+          <div style={{ display: 'flex', gap: '8px', margin: '8px 0', flexWrap: 'wrap' }}>
+            {(['self', 'opponent'] as const).map((team) => (
+              <button
+                key={team}
+                onClick={() => setPowerPlayTeam(team)}
+                disabled={powerPlayUsedTeams[team]}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: powerPlayTeam === team ? '2px solid #b58a00' : '1px solid #d9c77c',
+                  background: powerPlayUsedTeams[team] ? '#f3f3f3' : powerPlayTeam === team ? '#fff1a8' : '#fff',
+                  color: powerPlayUsedTeams[team] ? '#999' : '#222',
+                }}
+              >
+                {team === 'self' ? '自チーム' : '相手チーム'}{powerPlayUsedTeams[team] ? '（使用済み）' : ''}
+              </button>
+            ))}
+          </div>
+          <p style={{ margin: '8px 0', fontSize: '13px', color: '#665200' }}>
+              {powerPlayUsed ? 'PP 2回使用済み' : 'PPを適用'}
+            次のエンドの置き石を左右どちら側へ移動するか選択してください。PPは1試合1回のみ使用できます。
+          </p>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {(['left', 'right'] as const).map((side) => (
+              <button
+                key={side}
+                onClick={() => setPowerPlaySide(side)}
+                style={{
+                  padding: '9px 16px',
+                  borderRadius: '8px',
+                  border:
+                    powerPlaySide === side
+                      ? '2px solid #b58a00'
+                      : '1px solid #d9c77c',
+                  background: powerPlaySide === side ? '#fff1a8' : '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                {side === 'left' ? '左側' : '右側'}
+              </button>
+            ))}
+            <button
+              onClick={handleApplyPowerPlay}
+              style={{
+                padding: '9px 16px',
+                borderRadius: '8px',
+                border: '1px solid #b58a00',
+                background: '#f7d84a',
+                cursor: 'pointer',
+                fontWeight: '700',
+              }}
+            >
+              選択した側でPPを適用
+            </button>
+            <button
+              onClick={() => setShowPowerPlaySetup(false)}
+              style={{
+                padding: '9px 12px',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
+                background: '#fff',
+                cursor: 'pointer',
+              }}
+            >
+              キャンセル
+            </button>
+          </div>
+        </div>
+      )}
 
       <p
         style={{
