@@ -1,15 +1,19 @@
 #root {
   min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 .app {
   min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
   background: #f4f6f8;
   color: #17202a;
 }
 
 .start-screen {
-  width: min(760px, 100%);
+  width: min(760px, calc(100% - 32px));
   margin: 0 auto;
   padding: 48px 24px 64px;
 }
@@ -38,6 +42,7 @@
 }
 
 .settings-card {
+  min-width: 0;
   padding: 28px;
   border: 1px solid #dce1e6;
   border-radius: 20px;
@@ -83,6 +88,7 @@
 }
 
 .choice-button {
+  min-width: 0;
   min-height: 72px;
   padding: 14px 16px;
   border: 2px solid #dfe4e8;
@@ -220,6 +226,51 @@ input:focus {
   background: #2b3742;
 }
 
+.curling-sheet {
+  width: min(100%, 1180px);
+  min-width: 0;
+  margin: 0 auto;
+  padding: 16px clamp(12px, 3vw, 24px) 24px;
+  overflow-x: hidden;
+}
+
+.curling-sheet button,
+.curling-sheet input,
+.curling-sheet textarea,
+.curling-sheet select {
+  max-width: 100%;
+}
+
+.sheet-board {
+  max-height: 58vh;
+  object-fit: contain;
+}
+
+@media (min-width: 601px) and (max-width: 999px) {
+  .start-screen {
+    padding: 32px 20px 48px;
+  }
+
+  .settings-card {
+    padding: 22px;
+  }
+
+  .curling-sheet {
+    padding: 12px 16px 20px;
+  }
+
+  .sheet-board {
+    max-height: 52vh;
+  }
+}
+
+@media (min-width: 1000px) and (max-height: 800px) {
+  .curling-sheet > .sheet-board,
+  .curling-sheet > .throw-log {
+    max-height: calc(100vh - 190px);
+  }
+}
+
 @media (min-width: 1000px) and (min-height: 700px) {
   .curling-sheet {
     display: grid;
@@ -265,12 +316,34 @@ input:focus {
 
 @media (max-width: 600px) {
   .start-screen {
+    width: 100%;
     padding: 28px 16px 40px;
   }
 
   .settings-card {
-    padding: 20px;
+    padding: 16px;
     border-radius: 16px;
+  }
+
+  .setting-section {
+    padding: 18px 0;
+  }
+
+  .four-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .choice-button {
+    min-height: 60px;
+    padding: 10px 8px;
+  }
+
+  .curling-sheet {
+    padding: 8px 8px 16px;
+  }
+
+  .sheet-board {
+    max-height: 46vh;
   }
 
   .two-columns,
