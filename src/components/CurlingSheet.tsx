@@ -8,19 +8,30 @@ type EndScore = {
   powerPlay?: boolean
 }
 
-type SavedMatch = {
+export type SavedMatch = {
   id: string
   savedAt: string
   matchFormat: MatchFormat
   endCount?: number
   teamColor?: TeamColor
   initialHammerTeam?: 'self' | 'opponent'
+  teamName?: string
+  opponentName?: string
+  playerNames?: string[]
+  mixedDoublesGuardPosition?: MixedDoublesGuardPosition
   scoreSelf: number
   scoreOpponent: number
   endResults: EndScore[]
   powerPlayUsedTeams?: Record<PowerPlayTeam, boolean>
   throwHistory: ThrowRecord[]
   matchNote: string
+  currentEnd?: number
+  currentThrow?: number
+  stones?: Stone[]
+  pendingStone?: Stone | null
+  nextStoneId?: number
+  hammerTeam?: 'self' | 'opponent'
+  matchFinished?: boolean
 }
 
 type TeamColor = 'red' | 'yellow'
@@ -177,6 +188,9 @@ function CurlingSheet({
   playerNames,
   initialHammerTeam,
   mixedDoublesGuardPosition,
+  onResetToSetup,
+  savedMatchToLoad,
+  onLoadComplete,
 }: {
   matchFormat: MatchFormat
   endCount: number
@@ -187,6 +201,9 @@ function CurlingSheet({
   playerNames: string[]
   initialHammerTeam: 'self' | 'opponent'
   mixedDoublesGuardPosition?: MixedDoublesGuardPosition
+  onResetToSetup?: () => void
+  savedMatchToLoad?: SavedMatch | null
+  onLoadComplete?: () => void
 }) {
 const initialPositionedStones =
   matchFormat === 'mixed-doubles' && mixedDoublesGuardPosition
@@ -854,10 +871,23 @@ const handleDeleteSavedMatch = (matchId: string) => {
   localStorage.setItem(SAVED_MATCHES_KEY, JSON.stringify(nextMatches))
 }
 
-const handleLoadSavedMatch = (match: SavedMatch) => {
+useEffect(() => {
+    if (!savedMatchToLoad) {
+      return
+    }
+
+    handleLoadSavedMatch(savedMatchToLoad)
+    onLoadComplete?.()
+  }, [savedMatchToLoad])
+
+  const handleLoadSavedMatch = (match: SavedMatch) => {
   const firstThrow = match.throwHistory.find(
     (record) => record.endNumber === 1 && record.throwNumber === 1,
   )
+  const loadedEnd = match.currentEnd ?? 1
+  const loadedThrow = match.currentThrow ?? 1
+  const loadedStones = match.stones ?? firstThrow?.stones ?? []
+  const loadedPendingStone = match.pendingStone ?? null
 
   setThrowHistory(match.throwHistory)
   onEndCountChange(
@@ -879,9 +909,12 @@ const handleLoadSavedMatch = (match: SavedMatch) => {
   setScoreSelf(match.scoreSelf)
   setScoreOpponent(match.scoreOpponent)
   setMatchNote(match.matchNote)
-  setCurrentEnd(1)
-  setCurrentThrow(1)
-  setStones(firstThrow?.stones ?? [])
+  setCurrentEnd(loadedEnd)
+  setCurrentThrow(loadedThrow)
+  setStones(loadedStones)
+  setPendingStone(loadedPendingStone)
+  setNextStoneId(match.nextStoneId ?? Math.max(loadedStones.length + 1, firstThrow?.stones.length ?? 0 + 1))
+  setHammerTeam(match.hammerTeam ?? initialHammerTeam)
   setSelectedHistoryThrow(firstThrow ? 1 : null)
   setSelectedShotType(firstThrow?.shotType ?? 'Guard')
   setSelectedRating(firstThrow?.rating ?? 3)
@@ -889,7 +922,7 @@ const handleLoadSavedMatch = (match: SavedMatch) => {
   setEndResult(null)
   setEndPoints(1)
   setShowEndResultPage(false)
-  setMatchFinished(false)
+  setMatchFinished(match.matchFinished ?? false)
   setShowMatchSettings(false)
 }
 
@@ -1004,6 +1037,40 @@ const handleFinishMatch = () => {
   persistSavedMatch(createSavedMatch(endResult))
   handleConfirmEndResult()
   setMatchFinished(true)
+}
+
+const handleSaveCurrentMatch = () => {
+  const snapshot: SavedMatch = {
+    id: `${Date.now()}`,
+    savedAt: new Date().toISOString(),
+    matchFormat,
+    endCount,
+    teamColor,
+    initialHammerTeam,
+    teamName,
+    opponentName,
+    playerNames,
+    mixedDoublesGuardPosition,
+    scoreSelf,
+    scoreOpponent,
+    endResults,
+    powerPlayUsedTeams,
+    throwHistory: throwHistory.map((record) => ({
+      ...record,
+      stones: record.stones.map((stone) => ({ ...stone })),
+    })),
+    matchNote,
+    currentEnd,
+    currentThrow,
+    stones: stones.map((stone) => ({ ...stone })),
+    pendingStone: pendingStone ? { ...pendingStone } : null,
+    nextStoneId,
+    hammerTeam,
+    matchFinished,
+  }
+
+  persistSavedMatch(snapshot)
+  alert('試合を途中保存しました。')
 }
 
 const handleApplyMatchSettings = () => {
@@ -1845,6 +1912,35 @@ const handlePendingStoneSvgPointerUp = (
           }}
         >
           設定を閉じる
+        </button>
+      </div>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
+        <button
+          onClick={handleSaveCurrentMatch}
+          style={{
+            padding: '8px 12px',
+            borderRadius: '8px',
+            border: '1px solid #22c55e',
+            background: '#ecfdf5',
+            cursor: 'pointer',
+          }}
+        >
+          試合を途中保存
+        </button>
+        <button
+          onClick={() => {
+            clearCurrentMatch()
+            onResetToSetup?.()
+          }}
+          style={{
+            padding: '8px 12px',
+            borderRadius: '8px',
+            border: '1px solid #ef4444',
+            background: '#fef2f2',
+            cursor: 'pointer',
+          }}
+        >
+          リセットして最初の設定画面へ
         </button>
       </div>
       <label style={{ display: 'block', marginTop: '10px' }}>

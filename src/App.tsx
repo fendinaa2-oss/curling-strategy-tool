@@ -29,6 +29,8 @@ function App() {
   const [teamName, setTeamName] = useState('')
   const [opponentName, setOpponentName] = useState('')
   const [playerNames, setPlayerNames] = useState(['', '', '', ''])
+  const [savedMatches, setSavedMatches] = useState<SavedMatch[]>([])
+  const [savedMatchToLoad, setSavedMatchToLoad] = useState<SavedMatch | null>(null)
 
   useEffect(() => {
     const saved = localStorage.getItem(APP_STORAGE_KEY)
@@ -121,6 +123,52 @@ function App() {
 
     localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(payload))
   }, [matchStarted, showMixedDoublesSetup, mixedDoublesGuardPosition, format, teamColor, hammer, endCount, customEndCount, teamName, opponentName, playerNames])
+
+  useEffect(() => {
+    const saved = localStorage.getItem('curling-strategy-tool-matches-v1')
+
+    if (!saved) {
+      return
+    }
+
+    try {
+      setSavedMatches(JSON.parse(saved) as SavedMatch[])
+    } catch {
+      localStorage.removeItem('curling-strategy-tool-matches-v1')
+    }
+  }, [])
+
+  const resetToInitialScreen = () => {
+    setMatchStarted(false)
+    setShowMixedDoublesSetup(false)
+    setFormat('four-person')
+    setTeamColor('red')
+    setHammer('self')
+    setEndCount(10)
+    setCustomEndCount('10')
+    setTeamName('')
+    setOpponentName('')
+    setPlayerNames(['', '', '', ''])
+    setMixedDoublesGuardPosition('A2-house')
+    setSavedMatchToLoad(null)
+    localStorage.removeItem('curling-strategy-tool-state-v1')
+    localStorage.removeItem('curling-strategy-tool-app-state-v1')
+  }
+
+  const loadSavedMatchFromStart = (match: SavedMatch) => {
+    setFormat(match.matchFormat)
+    setEndCount(match.endCount ?? (match.matchFormat === 'four-person' ? 10 : 8))
+    setCustomEndCount(String(match.endCount ?? (match.matchFormat === 'four-person' ? 10 : 8)))
+    setTeamColor(match.teamColor ?? 'red')
+    setHammer(match.initialHammerTeam ?? 'self')
+    setTeamName(match.teamName ?? '')
+    setOpponentName(match.opponentName ?? '')
+    setPlayerNames(match.playerNames ?? ['', '', '', ''])
+    setMixedDoublesGuardPosition(match.mixedDoublesGuardPosition ?? 'A2-house')
+    setSavedMatchToLoad(match)
+    setMatchStarted(true)
+    setShowMixedDoublesSetup(false)
+  }
 
   const playerCount = format === 'four-person' ? 4 : 2
 
