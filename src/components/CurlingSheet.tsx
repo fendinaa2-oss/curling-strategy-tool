@@ -262,8 +262,6 @@ const [showScoreboardEdit, setShowScoreboardEdit] = useState(false)
 const [scoreboardEditEnd, setScoreboardEditEnd] = useState(1)
 const [scoreboardEditTeam, setScoreboardEditTeam] = useState<'self' | 'opponent'>('self')
 const [scoreboardEditPoints, setScoreboardEditPoints] = useState(0)
-const [settingsScoreSelf, setSettingsScoreSelf] = useState('0')
-const [settingsScoreOpponent, setSettingsScoreOpponent] = useState('0')
 const [matchNote, setMatchNote] = useState('')
 const [savedMatches, setSavedMatches] = useState<SavedMatch[]>([])
 const [scrollPosition, setScrollPosition] = useState(0)
@@ -1158,18 +1156,6 @@ const handleApplyScoreboardCorrection = () => {
       0,
     ),
   )
-  setSettingsScoreSelf(String(
-    nextResults.reduce(
-      (total, end) => total + (end.result === 'self' ? end.points : 0),
-      0,
-    ),
-  ))
-  setSettingsScoreOpponent(String(
-    nextResults.reduce(
-      (total, end) => total + (end.result === 'opponent' ? end.points : 0),
-      0,
-    ),
-  ))
   setShowScoreboardEdit(false)
   setShowMatchSettings(false)
 }
@@ -2871,8 +2857,6 @@ const handlePendingStoneSvgPointerUp = (
   onClick={() => {
     setSettingsStartEnd(currentEnd)
     setSettingsStartThrow(currentThrow)
-    setSettingsScoreSelf(String(scoreSelf))
-    setSettingsScoreOpponent(String(scoreOpponent))
     setShowMatchSettings((current) => !current)
   }}
   style={{
