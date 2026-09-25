@@ -249,16 +249,15 @@ input:focus {
 .scroll-rail {
   position: fixed;
   z-index: 20;
-  top: 18vh;
-  right: 4px;
-  width: 28px;
-  height: 58vh;
+  top: 50%;
+  right: calc(14px - 29vh);
+  width: 58vh;
+  height: 28px;
   margin: 0;
-  writing-mode: vertical-lr;
-  direction: rtl;
   accent-color: #64748b;
   opacity: 0.72;
   touch-action: none;
+  transform: translateY(-50%) rotate(-90deg);
 }
 
 .scroll-rail::-webkit-slider-runnable-track {
@@ -279,9 +278,9 @@ input:focus {
 
 @media (max-width: 600px) {
   .scroll-rail {
-    right: 1px;
-    width: 24px;
-    height: 52vh;
+    right: calc(12px - 26vh);
+    width: 52vh;
+    height: 24px;
   }
 }
 
