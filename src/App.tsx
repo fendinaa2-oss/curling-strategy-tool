@@ -1,10 +1,11 @@
 import CurlingSheet from './components/CurlingSheet'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 
 type MatchFormat = 'four-person' | 'mixed-doubles'
 type TeamColor = 'red' | 'yellow'
 type Hammer = 'self' | 'opponent'
+const APP_STORAGE_KEY = 'curling-strategy-tool-app-state-v1'
 type MixedDoublesGuardPosition =
   | 'A1-house'
   | 'A1-hog'
@@ -28,6 +29,98 @@ function App() {
   const [teamName, setTeamName] = useState('')
   const [opponentName, setOpponentName] = useState('')
   const [playerNames, setPlayerNames] = useState(['', '', '', ''])
+
+  useEffect(() => {
+    const saved = localStorage.getItem(APP_STORAGE_KEY)
+
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as {
+          matchStarted?: boolean
+          showMixedDoublesSetup?: boolean
+          mixedDoublesGuardPosition?: MixedDoublesGuardPosition
+          format?: MatchFormat
+          teamColor?: TeamColor
+          hammer?: Hammer
+          endCount?: number
+          customEndCount?: string
+          teamName?: string
+          opponentName?: string
+          playerNames?: string[]
+        }
+
+        if (typeof parsed.matchStarted === 'boolean') {
+          setMatchStarted(parsed.matchStarted)
+        }
+
+        if (typeof parsed.showMixedDoublesSetup === 'boolean') {
+          setShowMixedDoublesSetup(parsed.showMixedDoublesSetup)
+        }
+
+        if (parsed.mixedDoublesGuardPosition) {
+          setMixedDoublesGuardPosition(parsed.mixedDoublesGuardPosition)
+        }
+
+        if (parsed.format) {
+          setFormat(parsed.format)
+        }
+
+        if (parsed.teamColor) {
+          setTeamColor(parsed.teamColor)
+        }
+
+        if (parsed.hammer) {
+          setHammer(parsed.hammer)
+        }
+
+        if (typeof parsed.endCount === 'number') {
+          setEndCount(parsed.endCount)
+        }
+
+        if (typeof parsed.customEndCount === 'string') {
+          setCustomEndCount(parsed.customEndCount)
+        }
+
+        if (typeof parsed.teamName === 'string') {
+          setTeamName(parsed.teamName)
+        }
+
+        if (typeof parsed.opponentName === 'string') {
+          setOpponentName(parsed.opponentName)
+        }
+
+        if (Array.isArray(parsed.playerNames)) {
+          setPlayerNames(parsed.playerNames)
+        }
+      } catch {
+        localStorage.removeItem(APP_STORAGE_KEY)
+      }
+    }
+
+    const sheetState = localStorage.getItem('curling-strategy-tool-state-v1')
+    if (sheetState) {
+      setMatchStarted(true)
+      setShowMixedDoublesSetup(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const payload = {
+      matchStarted,
+      showMixedDoublesSetup,
+      mixedDoublesGuardPosition,
+      format,
+      teamColor,
+      hammer,
+      endCount,
+      customEndCount,
+      teamName,
+      opponentName,
+      playerNames,
+    }
+
+    localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(payload))
+  }, [matchStarted, showMixedDoublesSetup, mixedDoublesGuardPosition, format, teamColor, hammer, endCount, customEndCount, teamName, opponentName, playerNames])
 
   const playerCount = format === 'four-person' ? 4 : 2
 
