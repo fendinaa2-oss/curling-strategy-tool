@@ -155,6 +155,43 @@ function App() {
           </p>
         </header>
 
+        {savedMatches.length > 0 && (
+          <div className="settings-card" style={{ marginBottom: '16px' }}>
+            <div className="setting-section">
+              <h2>保存した試合</h2>
+              <div style={{ display: 'grid', gap: '8px' }}>
+                {savedMatches.map((match) => (
+                  <div
+                    key={match.id}
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '8px',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 12px',
+                      borderRadius: '10px',
+                      border: '1px solid #cbd5e1',
+                      background: '#f8fafc',
+                    }}
+                  >
+                    <div style={{ fontSize: '13px', color: '#475569' }}>
+                      {new Date(match.savedAt).toLocaleString()} / {match.scoreSelf}-{match.scoreOpponent}
+                    </div>
+                    <button
+                      className="choice-button"
+                      onClick={() => loadSavedMatchFromStart(match)}
+                      style={{ margin: 0 }}
+                    >
+                      途中から続ける
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="settings-card">
           <div className="setting-section">
             <h2>試合形式</h2>
@@ -437,6 +474,9 @@ function App() {
           mixedDoublesGuardPosition={
             format === 'mixed-doubles' ? mixedDoublesGuardPosition : undefined
           }
+          onResetToSetup={resetToInitialScreen}
+          savedMatchToLoad={savedMatchToLoad}
+          onLoadComplete={() => setSavedMatchToLoad(null)}
         />
       )}
     </main>
