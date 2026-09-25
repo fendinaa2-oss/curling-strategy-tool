@@ -258,6 +258,10 @@ const [selectedShotRateMatchId, setSelectedShotRateMatchId] =
 const [matchFinished, setMatchFinished] = useState(false)
 const [settingsStartEnd, setSettingsStartEnd] = useState(1)
 const [settingsStartThrow, setSettingsStartThrow] = useState(1)
+const [showScoreboardEdit, setShowScoreboardEdit] = useState(false)
+const [scoreboardEditEnd, setScoreboardEditEnd] = useState(1)
+const [scoreboardEditTeam, setScoreboardEditTeam] = useState<'self' | 'opponent'>('self')
+const [scoreboardEditPoints, setScoreboardEditPoints] = useState(0)
 const [settingsScoreSelf, setSettingsScoreSelf] = useState('0')
 const [settingsScoreOpponent, setSettingsScoreOpponent] = useState('0')
 const [matchNote, setMatchNote] = useState('')
@@ -1125,65 +1129,49 @@ const handleApplyMatchSettings = () => {
 }
 
 const handleApplyScoreboardCorrection = () => {
-  const correctedScoreSelf = Math.max(
-    0,
-    Math.floor(Number(settingsScoreSelf) || 0),
-  )
-  const correctedScoreOpponent = Math.max(
-    0,
-    Math.floor(Number(settingsScoreOpponent) || 0),
-  )
+  const selectedEnd = Math.max(1, Math.min(maxEnds, scoreboardEditEnd))
+  const selectedPoints = Math.max(0, Math.min(8, Number(scoreboardEditPoints) || 0))
+  const nextResults = [...endResults]
 
-  const hasCurrentEndProgress = throwHistory.some(
-    (record) => record.endNumber === currentEnd,
-  )
+  while (nextResults.length < selectedEnd) {
+    nextResults.push({ result: 'blank', points: 0, powerPlay: false })
+  }
 
-  if (hasCurrentEndProgress) {
-    const priorEndResults = endResults.slice(0, currentEnd - 1)
-    const priorScoreSelf = priorEndResults.reduce(
-      (total, end) => total + (end.result === 'self' ? end.points : 0),
-      0,
-    )
-    const priorScoreOpponent = priorEndResults.reduce(
-      (total, end) => total + (end.result === 'opponent' ? end.points : 0),
-      0,
-    )
-
-    saveUndoState()
-    setThrowHistory(throwHistory.filter((record) => record.endNumber < currentEnd))
-    setEndResults(priorEndResults)
-    setPowerPlayEnds(powerPlayEnds.filter((end) => end < currentEnd))
-    setPowerPlayUsedTeams({ self: false, opponent: false })
-    setScoreSelf(priorScoreSelf)
-    setScoreOpponent(priorScoreOpponent)
-    setStones([])
-    setCurrentEnd(currentEnd)
-    setCurrentThrow(1)
-    setEndResult(null)
-    setEndPoints(1)
-    setShowEndResultPage(false)
-    setMatchFinished(false)
-    setSelectedHistoryThrow(null)
-    setSelectedStoneId(null)
-    setPendingStone({
-      id: 1,
-      color: 'red',
-      x: WAITING_STONE_X,
-      y: WAITING_STONE_Y,
-      out: false,
-    })
-    setShowMatchSettings(false)
-    alert(
-      `${currentEnd}エンド中のスコアが進行中のハンマーとずれるため、${currentEnd}エンド1投目からやり直します。`,
-    )
-    return
+  const targetIndex = selectedEnd - 1
+  nextResults[targetIndex] = {
+    result: scoreboardEditTeam,
+    points: selectedPoints,
+    powerPlay: powerPlayEnds.includes(selectedEnd),
   }
 
   saveUndoState()
-  setScoreSelf(correctedScoreSelf)
-  setScoreOpponent(correctedScoreOpponent)
-  setSettingsScoreSelf(String(correctedScoreSelf))
-  setSettingsScoreOpponent(String(correctedScoreOpponent))
+  setEndResults(nextResults)
+  setScoreSelf(
+    nextResults.reduce(
+      (total, end) => total + (end.result === 'self' ? end.points : 0),
+      0,
+    ),
+  )
+  setScoreOpponent(
+    nextResults.reduce(
+      (total, end) => total + (end.result === 'opponent' ? end.points : 0),
+      0,
+    ),
+  )
+  setSettingsScoreSelf(String(
+    nextResults.reduce(
+      (total, end) => total + (end.result === 'self' ? end.points : 0),
+      0,
+    ),
+  ))
+  setSettingsScoreOpponent(String(
+    nextResults.reduce(
+      (total, end) => total + (end.result === 'opponent' ? end.points : 0),
+      0,
+    ),
+  ))
+  setShowScoreboardEdit(false)
+  setShowMatchSettings(false)
 }
 
 const handleHistorySelect = (endNumber: number, throwNumber: number) => {
@@ -2011,52 +1999,121 @@ const handlePendingStoneSvgPointerUp = (
           </select>
         </div>
       </div>
-      <label style={{ display: 'block', marginTop: '10px' }}>
-        スコアボード修正: 自チーム得点
-        <input
-          type="number"
-          min="0"
-          value={settingsScoreSelf}
-          onChange={(event) => setSettingsScoreSelf(event.target.value)}
-          style={{ display: 'block', width: '100%', padding: '6px' }}
-        />
-      </label>
-      <label style={{ display: 'block', marginTop: '10px' }}>
-        スコアボード修正: 相手チーム得点
-        <input
-          type="number"
-          min="0"
-          value={settingsScoreOpponent}
-          onChange={(event) => setSettingsScoreOpponent(event.target.value)}
-          style={{ display: 'block', width: '100%', padding: '6px' }}
-        />
-      </label>
-      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
-        <button
-          onClick={handleApplyScoreboardCorrection}
-          style={{
-            padding: '9px 12px',
-            borderRadius: '8px',
-            border: '1px solid #2878d7',
-            background: '#eaf3ff',
-            cursor: 'pointer',
-          }}
-        >
-          スコアボードのみ編集
-        </button>
-        <button
-          onClick={handleApplyMatchSettings}
-          style={{
-            padding: '9px 12px',
-            borderRadius: '8px',
-            border: '1px solid #d97706',
-            background: '#fff7ed',
-            cursor: 'pointer',
-          }}
-        >
-          指定のエンドから再開
-        </button>
-      </div>
+      {showScoreboardEdit ? (
+        <div style={{ marginTop: '12px', padding: '12px', borderRadius: '10px', background: '#fefefe', border: '1px solid #cbd5e1' }}>
+          <div style={{ fontWeight: '700', marginBottom: '8px' }}>スコアボードのみ編集</div>
+          <div style={{ display: 'grid', gap: '10px' }}>
+            <label>
+              エンド
+              <select
+                value={scoreboardEditEnd}
+                onChange={(event) => setScoreboardEditEnd(Number(event.target.value))}
+                style={{ display: 'block', width: '100%', padding: '6px', marginTop: '4px' }}
+              >
+                {Array.from({ length: maxEnds }, (_, index) => index + 1).map((end) => (
+                  <option key={end} value={end}>
+                    {end}エンド
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div>
+              <div style={{ marginBottom: '6px' }}>得点を取ったチーム</div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {(['self', 'opponent'] as const).map((team) => (
+                  <button
+                    key={team}
+                    onClick={() => setScoreboardEditTeam(team)}
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      background: scoreboardEditTeam === team ? '#eaf3ff' : '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {team === 'self' ? '自分' : '相手'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label>
+              点数
+              <select
+                value={scoreboardEditPoints}
+                onChange={(event) => setScoreboardEditPoints(Number(event.target.value))}
+                style={{ display: 'block', width: '100%', padding: '6px', marginTop: '4px' }}
+              >
+                {Array.from({ length: 9 }, (_, index) => index).map((value) => (
+                  <option key={value} value={value}>
+                    {value}点
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+            <button
+              onClick={handleApplyScoreboardCorrection}
+              style={{
+                flex: 1,
+                padding: '9px 12px',
+                borderRadius: '8px',
+                border: '1px solid #2878d7',
+                background: '#eaf3ff',
+                cursor: 'pointer',
+              }}
+            >
+              設定を保存
+            </button>
+            <button
+              onClick={() => setShowScoreboardEdit(false)}
+              style={{
+                padding: '9px 12px',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1',
+                background: '#fff',
+                cursor: 'pointer',
+              }}
+            >
+              キャンセル
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
+          <button
+            onClick={() => {
+              setScoreboardEditEnd(currentEnd)
+              setScoreboardEditTeam('self')
+              setScoreboardEditPoints(0)
+              setShowScoreboardEdit(true)
+            }}
+            style={{
+              padding: '9px 12px',
+              borderRadius: '8px',
+              border: '1px solid #2878d7',
+              background: '#eaf3ff',
+              cursor: 'pointer',
+            }}
+          >
+            スコアボードのみ編集
+          </button>
+          <button
+            onClick={handleApplyMatchSettings}
+            style={{
+              padding: '9px 12px',
+              borderRadius: '8px',
+              border: '1px solid #d97706',
+              background: '#fff7ed',
+              cursor: 'pointer',
+            }}
+          >
+            指定のエンドから再開
+          </button>
+        </div>
+      )}
       {savedMatches.length > 0 && (
         <div style={{ marginTop: '16px' }}>
           <strong>保存済み試合</strong>
