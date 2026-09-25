@@ -1256,8 +1256,6 @@ const clearCurrentMatch = () => {
   setShowMatchSettings(false)
   setMatchFinished(false)
   setSettingsStartEnd(1)
-  setSettingsScoreSelf('0')
-  setSettingsScoreOpponent('0')
   setMatchNote('')
   setUndoHistory([])
   setSelectedStoneId(null)
@@ -1555,8 +1553,6 @@ const handlePendingStoneSvgPointerUp = (
             setMatchFinished(false)
             setShowMatchSettings(true)
             setSettingsStartEnd(currentEnd)
-            setSettingsScoreSelf(String(scoreSelf))
-            setSettingsScoreOpponent(String(scoreOpponent))
           }}
           style={{
             display: 'block',
