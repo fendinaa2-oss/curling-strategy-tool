@@ -257,6 +257,7 @@ const [selectedShotRateMatchId, setSelectedShotRateMatchId] =
   useState<string | null>(null)
 const [matchFinished, setMatchFinished] = useState(false)
 const [settingsStartEnd, setSettingsStartEnd] = useState(1)
+const [settingsStartThrow, setSettingsStartThrow] = useState(1)
 const [settingsScoreSelf, setSettingsScoreSelf] = useState('0')
 const [settingsScoreOpponent, setSettingsScoreOpponent] = useState('0')
 const [matchNote, setMatchNote] = useState('')
@@ -1074,51 +1075,39 @@ const handleSaveCurrentMatch = () => {
 }
 
 const handleApplyMatchSettings = () => {
-  const targetEnd = Math.max(
-    1,
-    Math.min(maxEnds, settingsStartEnd),
-  )
+  const targetEnd = Math.max(1, Math.min(maxEnds, settingsStartEnd))
+  const targetThrow = Math.max(1, Math.min(maxThrowsPerEnd, settingsStartThrow))
   const keptEndResults = endResults.slice(0, targetEnd - 1)
-  const keptPowerPlayEnds = powerPlayEnds.filter(
-    (end) => end < targetEnd,
-  )
+  const keptPowerPlayEnds = powerPlayEnds.filter((end) => end < targetEnd)
   const keptHistory = throwHistory.filter(
-    (record) => record.endNumber < targetEnd,
+    (record) =>
+      record.endNumber < targetEnd ||
+      (record.endNumber === targetEnd && record.throwNumber < targetThrow),
   )
   const recalculatedSelf = keptEndResults.reduce(
-    (total, end) =>
-      total + (end.result === 'self' ? end.points : 0),
+    (total, end) => total + (end.result === 'self' ? end.points : 0),
     0,
   )
   const recalculatedOpponent = keptEndResults.reduce(
-    (total, end) =>
-      total + (end.result === 'opponent' ? end.points : 0),
+    (total, end) => total + (end.result === 'opponent' ? end.points : 0),
     0,
   )
 
   saveUndoState()
   setStones([])
   setCurrentEnd(targetEnd)
-  setCurrentThrow(1)
+  setCurrentThrow(targetThrow)
   setThrowHistory(keptHistory)
   setEndResults(keptEndResults)
   setPowerPlayEnds(keptPowerPlayEnds)
-  setPowerPlayUsedTeams((current) => ({
-    self: keptPowerPlayEnds.length > 0 ? current.self : false,
-    opponent: keptPowerPlayEnds.length > 0 ? current.opponent : false,
-  }))
+  setPowerPlayUsedTeams({
+    self: false,
+    opponent: false,
+  })
   setPowerPlaySideForNextEnd(null)
   setShowPowerPlaySetup(false)
-  setScoreSelf(
-    Number.isNaN(Number(settingsScoreSelf))
-      ? recalculatedSelf
-      : Number(settingsScoreSelf),
-  )
-  setScoreOpponent(
-    Number.isNaN(Number(settingsScoreOpponent))
-      ? recalculatedOpponent
-      : Number(settingsScoreOpponent),
-  )
+  setScoreSelf(recalculatedSelf)
+  setScoreOpponent(recalculatedOpponent)
   setEndResult(null)
   setEndPoints(1)
   setShowEndResultPage(false)
@@ -1126,7 +1115,7 @@ const handleApplyMatchSettings = () => {
   setSelectedHistoryThrow(null)
   setSelectedStoneId(null)
   setPendingStone({
-    id: nextStoneId,
+    id: 1,
     color: 'red',
     x: WAITING_STONE_X,
     y: WAITING_STONE_Y,
@@ -1144,6 +1133,51 @@ const handleApplyScoreboardCorrection = () => {
     0,
     Math.floor(Number(settingsScoreOpponent) || 0),
   )
+
+  const hasCurrentEndProgress = throwHistory.some(
+    (record) => record.endNumber === currentEnd,
+  )
+
+  if (hasCurrentEndProgress) {
+    const priorEndResults = endResults.slice(0, currentEnd - 1)
+    const priorScoreSelf = priorEndResults.reduce(
+      (total, end) => total + (end.result === 'self' ? end.points : 0),
+      0,
+    )
+    const priorScoreOpponent = priorEndResults.reduce(
+      (total, end) => total + (end.result === 'opponent' ? end.points : 0),
+      0,
+    )
+
+    saveUndoState()
+    setThrowHistory(throwHistory.filter((record) => record.endNumber < currentEnd))
+    setEndResults(priorEndResults)
+    setPowerPlayEnds(powerPlayEnds.filter((end) => end < currentEnd))
+    setPowerPlayUsedTeams({ self: false, opponent: false })
+    setScoreSelf(priorScoreSelf)
+    setScoreOpponent(priorScoreOpponent)
+    setStones([])
+    setCurrentEnd(currentEnd)
+    setCurrentThrow(1)
+    setEndResult(null)
+    setEndPoints(1)
+    setShowEndResultPage(false)
+    setMatchFinished(false)
+    setSelectedHistoryThrow(null)
+    setSelectedStoneId(null)
+    setPendingStone({
+      id: 1,
+      color: 'red',
+      x: WAITING_STONE_X,
+      y: WAITING_STONE_Y,
+      out: false,
+    })
+    setShowMatchSettings(false)
+    alert(
+      `${currentEnd}エンド中のスコアが進行中のハンマーとずれるため、${currentEnd}エンド1投目からやり直します。`,
+    )
+    return
+  }
 
   saveUndoState()
   setScoreSelf(correctedScoreSelf)
@@ -1943,24 +1977,40 @@ const handlePendingStoneSvgPointerUp = (
           リセットして最初の設定画面へ
         </button>
       </div>
-      <label style={{ display: 'block', marginTop: '10px' }}>
-        開始するエンド
-        <select
-          value={settingsStartEnd}
-          onChange={(event) =>
-            setSettingsStartEnd(Number(event.target.value))
-          }
-          style={{ display: 'block', marginTop: '4px', padding: '6px' }}
-        >
-          {Array.from({ length: maxEnds }, (_, index) => index + 1).map(
-            (end) => (
+      <div style={{ display: 'grid', gap: '10px', marginTop: '12px' }}>
+        <div>
+          <label style={{ display: 'block', marginBottom: '6px' }}>
+            開始するエンド
+          </label>
+          <select
+            value={settingsStartEnd}
+            onChange={(event) => setSettingsStartEnd(Number(event.target.value))}
+            style={{ display: 'block', width: '100%', padding: '6px' }}
+          >
+            {Array.from({ length: maxEnds }, (_, index) => index + 1).map((end) => (
               <option key={end} value={end}>
                 {end}エンド
               </option>
-            ),
-          )}
-        </select>
-      </label>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: 'block', marginBottom: '6px' }}>
+            開始する投目
+          </label>
+          <select
+            value={settingsStartThrow}
+            onChange={(event) => setSettingsStartThrow(Number(event.target.value))}
+            style={{ display: 'block', width: '100%', padding: '6px' }}
+          >
+            {Array.from({ length: maxThrowsPerEnd }, (_, index) => index + 1).map((throwNumber) => (
+              <option key={throwNumber} value={throwNumber}>
+                {throwNumber}投目
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
       <label style={{ display: 'block', marginTop: '10px' }}>
         スコアボード修正: 自チーム得点
         <input
@@ -1981,34 +2031,32 @@ const handlePendingStoneSvgPointerUp = (
           style={{ display: 'block', width: '100%', padding: '6px' }}
         />
       </label>
-      <p style={{ margin: '8px 0 0', fontSize: '12px', color: '#64748b' }}>
-        スコアボードの合計だけを変更します。盤面や投球履歴は変更されません。
-      </p>
-      <button
-        onClick={handleApplyScoreboardCorrection}
-        style={{
-          marginTop: '10px',
-          padding: '9px 12px',
-          borderRadius: '8px',
-          border: '1px solid #2878d7',
-          background: '#eaf3ff',
-          cursor: 'pointer',
-        }}
-      >
-        スコアボードを修正
-      </button>
-      <button
-        onClick={handleApplyMatchSettings}
-        style={{
-          marginTop: '12px',
-          padding: '9px 12px',
-          borderRadius: '8px',
-          border: '1px solid #2878d7',
-          background: '#eaf3ff',
-        }}
-      >
-        設定を反映して再開
-      </button>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' }}>
+        <button
+          onClick={handleApplyScoreboardCorrection}
+          style={{
+            padding: '9px 12px',
+            borderRadius: '8px',
+            border: '1px solid #2878d7',
+            background: '#eaf3ff',
+            cursor: 'pointer',
+          }}
+        >
+          スコアボードのみ編集
+        </button>
+        <button
+          onClick={handleApplyMatchSettings}
+          style={{
+            padding: '9px 12px',
+            borderRadius: '8px',
+            border: '1px solid #d97706',
+            background: '#fff7ed',
+            cursor: 'pointer',
+          }}
+        >
+          指定のエンドから再開
+        </button>
+      </div>
       {savedMatches.length > 0 && (
         <div style={{ marginTop: '16px' }}>
           <strong>保存済み試合</strong>
@@ -2765,6 +2813,7 @@ const handlePendingStoneSvgPointerUp = (
 <button
   onClick={() => {
     setSettingsStartEnd(currentEnd)
+    setSettingsStartThrow(currentThrow)
     setSettingsScoreSelf(String(scoreSelf))
     setSettingsScoreOpponent(String(scoreOpponent))
     setShowMatchSettings((current) => !current)
