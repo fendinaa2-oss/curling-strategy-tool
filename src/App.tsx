@@ -1,4 +1,4 @@
-import CurlingSheet from './components/CurlingSheet'
+import CurlingSheet, { type SavedMatch } from './components/CurlingSheet'
 import { useEffect, useState } from 'react'
 import './App.css'
 
