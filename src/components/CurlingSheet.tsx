@@ -991,7 +991,7 @@ const handlePrintMatch = (match: SavedMatch) => {
 
   const renderThrowCard = (record: ThrowRecord) => `<article class="throw-card">
         ${renderPrintSheet(record)}
-        <div class="throw-meta"><strong>${record.endNumber}エンド ${record.throwNumber}投目</strong> / ${escapeHtml(record.shotType)} / 評価 ${record.rating}/5</div>
+        <div class="throw-meta"><strong>${record.endNumber}エンド ${record.throwNumber}投目</strong> / ${escapeHtml(record.shotType)} / 評価 ${record.rating}/4</div>
         <div class="throw-note">${escapeHtml(record.note || 'コメントなし')}</div>
       </article>`
 
@@ -1503,7 +1503,7 @@ const handlePendingStoneSvgPointerUp = (
   const successRate =
     throwHistory.length === 0
       ? 0
-      : (totalRating / (throwHistory.length * 5)) * 100
+      : (totalRating / (throwHistory.length * 4)) * 100
   const shotPositions = [
     { name: 'リード', throws: [1, 2] },
     { name: 'セカンド', throws: [3, 4] },
@@ -1542,7 +1542,7 @@ const handlePendingStoneSvgPointerUp = (
     }
     return (
       (records.reduce((sum, record) => sum + record.rating, 0) /
-        (records.length * 5)) *
+        (records.length * 4)) *
       100
     )
   }
@@ -3166,7 +3166,7 @@ const handlePendingStoneSvgPointerUp = (
         marginBottom: '12px',
       }}
     >
-      {[0, 1, 2, 3, 4, 5].map((value) => (
+      {[0, 1, 2, 3, 4].map((value) => (
         <button
           key={value}
           onClick={() => setSelectedRating(value)}
@@ -3363,7 +3363,7 @@ const handlePendingStoneSvgPointerUp = (
                           {record.endNumber}エンド {record.throwNumber}投目
                         </div>
                         <div>ショット: {record.shotType}</div>
-                        <div>評価: {record.rating}/5</div>
+                        <div>評価: {record.rating}/4</div>
                         <div style={{ whiteSpace: 'pre-wrap', marginTop: '6px' }}>
                           {record.note || 'メモなし'}
                         </div>
