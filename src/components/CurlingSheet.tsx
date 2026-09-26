@@ -64,6 +64,25 @@ type Stone = {
   out: boolean
 }
 
+type BoardPosition = {
+  x: number
+  y: number
+}
+
+type BoardMoveTarget =
+  | { type: 'stone'; id: number }
+  | { type: 'pending' }
+
+type ActiveBoardDrag =
+  | { type: 'crosshair'; pointerId: number }
+  | {
+      type: 'stone' | 'pending'
+      id: number
+      pointerId: number
+      startPointer: BoardPosition
+      startPosition: BoardPosition
+    }
+
 type ThrowRecord = {
   endNumber: number
   throwNumber: number
@@ -104,6 +123,7 @@ const WAITING_STONE_Y = -0.3
 const HOUSE_RADII = [1.829, 1.219, 0.61, 0.152]
 
 const SCALE = 100
+const STONE_PICKUP_RADIUS_PX = 32
 const STORAGE_KEY = 'curling-strategy-tool-state-v1'
 const SAVED_MATCHES_KEY = 'curling-strategy-tool-matches-v1'
 const SHOT_TYPES: ShotType[] = [
@@ -268,8 +288,18 @@ const [scrollPosition, setScrollPosition] = useState(0)
 
 const [undoHistory, setUndoHistory] = useState<UndoState[]>([])
 
-  const [selectedStoneId, setSelectedStoneId] =
-  useState<number | null>(null)
+  const [selectedStoneId, setSelectedStoneIdState] =
+    useState<number | null>(null)
+  const [moveTarget, setMoveTarget] = useState<BoardMoveTarget | null>(null)
+  const [crosshairPosition, setCrosshairPosition] =
+    useState<BoardPosition | null>(null)
+
+  const setSelectedStoneId = (stoneId: number | null) => {
+    setSelectedStoneIdState(stoneId)
+    setMoveTarget(
+      stoneId === null ? null : { type: 'stone', id: stoneId },
+    )
+  }
 
 
 const [pendingStone, setPendingStone] =
@@ -286,7 +316,7 @@ const [pendingStone, setPendingStone] =
   )
 
   const svgRef = useRef<SVGSVGElement | null>(null)
-  const pendingStoneDragRef = useRef(false)
+  const draggedItemRef = useRef<ActiveBoardDrag | null>(null)
 
   useEffect(() => {
     const updateScrollPosition = () => {
@@ -449,40 +479,6 @@ const [pendingStone, setPendingStone] =
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
   }, [stones, currentEnd, currentThrow, pendingStone, throwHistory, nextStoneId, scoreSelf, scoreOpponent, hammerTeam, endResult, endResults, powerPlayEnds, powerPlayUsedTeams, endPoints, matchNote])
 
-  const getPositionFromPointer = (
-    event: React.PointerEvent,
-  ) => {
-    const svg = svgRef.current
-
-    if (!svg) {
-      return null
-    }
-
-    const screenCtm = svg.getScreenCTM()
-
-    if (!screenCtm) {
-      return null
-    }
-
-    const point = svg.createSVGPoint()
-    point.x = event.clientX
-    point.y = event.clientY
-    const svgPoint = point.matrixTransform(screenCtm.inverse())
-    const x = svgPoint.x / SCALE
-    const y = svgPoint.y / SCALE
-
-    return {
-      x: Math.max(
-        0.145,
-        Math.min(SHEET_WIDTH - 0.145, x),
-      ),
-      y: Math.max(
-        BOARD_TOP_Y,
-        Math.min(BOARD_BOTTOM_Y - 0.145, y),
-      ),
-    }
-  }
-
   const getRawPositionFromPointer = (
     event: React.PointerEvent,
   ) => {
@@ -508,6 +504,20 @@ const [pendingStone, setPendingStone] =
       y: svgPoint.y / SCALE,
     }
   }
+
+  const clampBoardPosition = (
+    position: BoardPosition,
+    stoneInset = 0,
+  ): BoardPosition => ({
+    x: Math.max(
+      stoneInset,
+      Math.min(SHEET_WIDTH - stoneInset, position.x),
+    ),
+    y: Math.max(
+      BOARD_TOP_Y,
+      Math.min(BOARD_BOTTOM_Y - stoneInset, position.y),
+    ),
+  })
 
  const saveUndoState = () => {
   const snapshot: UndoState = {
@@ -1270,144 +1280,195 @@ const clearCurrentMatch = () => {
   localStorage.removeItem(STORAGE_KEY)
 }
 
-const handlePendingStoneSvgPointerDown = (
-  event: React.PointerEvent<SVGCircleElement>,
-) => {
-  saveUndoState()
-  pendingStoneDragRef.current = true
-  event.currentTarget.setPointerCapture(event.pointerId)
-}
-
-const handlePendingStoneSvgPointerMove = (
-  event: React.PointerEvent<SVGCircleElement>,
-) => {
-  if (
-    !event.currentTarget.hasPointerCapture(
-      event.pointerId,
-    )
-  ) {
-    return
-  }
-
-  const rawPosition = getRawPositionFromPointer(event)
-
-  if (!rawPosition) {
-    return
-  }
-
-  const position = {
-    x: Math.max(
-      0.145,
-      Math.min(SHEET_WIDTH - 0.145, rawPosition.x),
-    ),
-    y: Math.max(
-      BOARD_TOP_Y,
-      Math.min(BOARD_BOTTOM_Y - 0.145, rawPosition.y),
-    ),
-  }
-  const isOut =
-    rawPosition.x < 0 ||
-    rawPosition.x > SHEET_WIDTH ||
-    rawPosition.y < BOARD_TOP_Y ||
-    rawPosition.y > BOARD_BOTTOM_Y
-
-  setPendingStone((current) =>
-    current
-      ? {
-          ...current,
-          x: position.x,
-          y: position.y,
-          out: isOut,
-        }
-      : null,
-  )
-}
-
-const handlePendingStoneSvgPointerUp = (
-  event: React.PointerEvent<SVGCircleElement>,
-) => {
-  event.currentTarget.releasePointerCapture(event.pointerId)
-  pendingStoneDragRef.current = false
-}
-
-
-  const handlePointerDown = (
-  event: React.PointerEvent<SVGCircleElement>,
-  stoneId: number,
-) => {
-  saveUndoState()
-  event.currentTarget.setPointerCapture(event.pointerId)
-  setSelectedStoneId(stoneId)
-}
-
-  const handlePointerMove = (
-    event: React.PointerEvent<SVGCircleElement>,
-    stoneId: number,
+  const handleStonePointerDown = (
+    event: React.PointerEvent<SVGSVGElement>,
   ) => {
-    if (
-      !event.currentTarget.hasPointerCapture(
-        event.pointerId,
-      )
-    ) {
+    const pointerPosition = getRawPositionFromPointer(event)
+
+    if (!pointerPosition) {
       return
     }
 
-    const position = getPositionFromPointer(event)
+    event.preventDefault()
+    if (moveTarget) {
+      const origin =
+        moveTarget.type === 'stone'
+          ? stones.find((stone) => stone.id === moveTarget.id)
+          : pendingStone
 
-    if (!position) {
-      return
+      if (!origin || origin.out) {
+        setSelectedStoneId(null)
+        return
+      }
+
+      saveUndoState()
+      draggedItemRef.current = {
+        type: moveTarget.type,
+        id: origin.id,
+        pointerId: event.pointerId,
+        startPointer: pointerPosition,
+        startPosition: { x: origin.x, y: origin.y },
+      }
+    } else {
+      draggedItemRef.current = {
+        type: 'crosshair',
+        pointerId: event.pointerId,
+      }
+      setCrosshairPosition(clampBoardPosition(pointerPosition))
     }
- 
-    setStones((current) =>
-  current.map((stone) => {
-    if (stone.id !== stoneId) {
-      return stone
-    }
 
-    const svg = svgRef.current
-
-    if (!svg) {
-      return stone
-    }
-
-    const rect = svg.getBoundingClientRect()
-
-    const rawX =
-      ((event.clientX - rect.left) / rect.width) *
-      SHEET_WIDTH
-
-    const rawY =
-      BOARD_TOP_Y +
-      ((event.clientY - rect.top) / rect.height) *
-        BOARD_VIEW_HEIGHT
-
-    const isOut =
-      rawX < 0 ||
-      rawX > SHEET_WIDTH ||
-      rawY < BOARD_TOP_Y ||
-      rawY > BOARD_BOTTOM_Y
-
-    return {
-      ...stone,
-      x: Math.max(
-        0.145,
-        Math.min(SHEET_WIDTH - 0.145, rawX),
-      ),
-      y: Math.max(
-        BOARD_TOP_Y,
-        Math.min(BOARD_BOTTOM_Y - 0.145, rawY),
-      ),
-      out: isOut,
-    }
-  }),
-)
+    event.currentTarget.setPointerCapture(event.pointerId)
   }
 
-  const handlePointerUp = (
-  event: React.PointerEvent<SVGCircleElement>,
-) => {
-  event.currentTarget.releasePointerCapture(event.pointerId)
-}
+  const handleStonePointerMove = (
+    event: React.PointerEvent<SVGSVGElement>,
+  ) => {
+    const draggedItem = draggedItemRef.current
+
+    if (!draggedItem || draggedItem.pointerId !== event.pointerId) {
+      return
+    }
+
+    const rawPosition = getRawPositionFromPointer(event)
+
+    if (!rawPosition) {
+      return
+    }
+
+    if (draggedItem.type === 'crosshair') {
+      setCrosshairPosition(clampBoardPosition(rawPosition))
+      return
+    }
+
+    const destination = {
+      x:
+        draggedItem.startPosition.x +
+        rawPosition.x -
+        draggedItem.startPointer.x,
+      y:
+        draggedItem.startPosition.y +
+        rawPosition.y -
+        draggedItem.startPointer.y,
+    }
+    const isOut =
+      destination.x < 0 ||
+      destination.x > SHEET_WIDTH ||
+      destination.y < BOARD_TOP_Y ||
+      destination.y > BOARD_BOTTOM_Y
+    const position = clampBoardPosition(destination, 0.145)
+
+    setCrosshairPosition(position)
+
+    if (draggedItem.type === 'pending') {
+      setPendingStone((current) =>
+        current
+          ? {
+              ...current,
+              x: position.x,
+              y: position.y,
+              out: isOut,
+            }
+          : null,
+      )
+      return
+    }
+
+    setStones((current) =>
+      current.map((stone) =>
+        stone.id === draggedItem.id
+          ? {
+              ...stone,
+              x: position.x,
+              y: position.y,
+              out: isOut,
+            }
+          : stone,
+      ),
+    )
+  }
+
+  const handleStonePointerUp = (
+    event: React.PointerEvent<SVGSVGElement>,
+  ) => {
+    const draggedItem = draggedItemRef.current
+
+    if (!draggedItem || draggedItem.pointerId !== event.pointerId) {
+      return
+    }
+
+    draggedItemRef.current = null
+
+    if (draggedItem.type === 'crosshair') {
+      const svg = svgRef.current
+      const screenCtm = svg?.getScreenCTM()
+      const rawPosition = getRawPositionFromPointer(event)
+
+      if (svg && screenCtm && rawPosition) {
+        const position = clampBoardPosition(rawPosition)
+        const cursorPoint = svg.createSVGPoint()
+        cursorPoint.x = position.x * SCALE
+        cursorPoint.y = position.y * SCALE
+        const cursorScreenPoint = cursorPoint.matrixTransform(screenCtm)
+        const candidates: Array<{
+          target: BoardMoveTarget
+          position: BoardPosition
+        }> = stones
+          .filter((stone) => !stone.out)
+          .map((stone) => ({
+            target: { type: 'stone', id: stone.id },
+            position: { x: stone.x, y: stone.y },
+          }))
+
+        if (pendingStone && !pendingStone.out) {
+          candidates.push({
+            target: { type: 'pending' },
+            position: { x: pendingStone.x, y: pendingStone.y },
+          })
+        }
+
+        const closestTarget = candidates
+          .map((candidate) => {
+            const point = svg.createSVGPoint()
+            point.x = candidate.position.x * SCALE
+            point.y = candidate.position.y * SCALE
+            const screenPoint = point.matrixTransform(screenCtm)
+
+            return {
+              ...candidate,
+              distance: Math.hypot(
+                cursorScreenPoint.x - screenPoint.x,
+                cursorScreenPoint.y - screenPoint.y,
+              ),
+            }
+          })
+          .filter(
+            ({ distance }) => distance <= STONE_PICKUP_RADIUS_PX,
+          )
+          .sort((a, b) => a.distance - b.distance)[0]
+
+        setCrosshairPosition(
+          closestTarget?.position ?? position,
+        )
+
+        if (closestTarget) {
+          setMoveTarget(closestTarget.target)
+          setSelectedStoneIdState(
+            closestTarget.target.type === 'stone'
+              ? closestTarget.target.id
+              : null,
+          )
+        } else {
+          setSelectedStoneId(null)
+        }
+      }
+    } else {
+      setSelectedStoneId(null)
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
 
   const handleDeleteStone = () => {
     if (selectedStoneId === null) {
@@ -2957,7 +3018,7 @@ const handlePendingStoneSvgPointerUp = (
           color: '#666',
         }}
       >
-        石をタップすると選択できます。選択中の石は青い枠で表示されます。
+        クロスヘアを石に合わせて離すと選択し、次のドラッグで移動できます。
       </p>
 
 
@@ -2966,6 +3027,10 @@ const handlePendingStoneSvgPointerUp = (
         ref={svgRef}
         viewBox={`0 ${BOARD_TOP_Y * SCALE} ${SHEET_WIDTH * SCALE} ${BOARD_VIEW_HEIGHT * SCALE}`}
         width="100%"
+        onPointerDown={handleStonePointerDown}
+        onPointerMove={handleStonePointerMove}
+        onPointerUp={handleStonePointerUp}
+        onPointerCancel={handleStonePointerUp}
         style={{
           display: 'block',
           touchAction: 'none',
@@ -3089,19 +3154,6 @@ const handlePendingStoneSvgPointerUp = (
                   cursor: 'grab',
                   touchAction: 'none',
                 }}
-                onPointerDown={(event) =>
-                  handlePointerDown(
-                    event,
-                    stone.id,
-                  )
-                }
-                onPointerMove={(event) =>
-                  handlePointerMove(
-                    event,
-                    stone.id,
-                  )
-                }
-                onPointerUp={handlePointerUp}
               />
             </g>
           )
@@ -3122,10 +3174,32 @@ const handlePendingStoneSvgPointerUp = (
             strokeWidth="1.2"
             opacity="0.8"
             style={{ cursor: 'grab', touchAction: 'none' }}
-            onPointerDown={handlePendingStoneSvgPointerDown}
-            onPointerMove={handlePendingStoneSvgPointerMove}
-            onPointerUp={handlePendingStoneSvgPointerUp}
           />
+        )}
+
+        {crosshairPosition && (
+          <g
+            pointerEvents="none"
+            stroke="#475569"
+            strokeOpacity="0.55"
+            strokeWidth="0.8"
+            aria-hidden="true"
+          >
+            <line
+              vectorEffect="non-scaling-stroke"
+              x1={(crosshairPosition.x - 0.13) * SCALE}
+              y1={crosshairPosition.y * SCALE}
+              x2={(crosshairPosition.x + 0.13) * SCALE}
+              y2={crosshairPosition.y * SCALE}
+            />
+            <line
+              vectorEffect="non-scaling-stroke"
+              x1={crosshairPosition.x * SCALE}
+              y1={(crosshairPosition.y - 0.13) * SCALE}
+              x2={crosshairPosition.x * SCALE}
+              y2={(crosshairPosition.y + 0.13) * SCALE}
+            />
+          </g>
         )}
       </svg>
         <div
