@@ -272,6 +272,7 @@ const [powerPlaySideForNextEnd, setPowerPlaySideForNextEnd] =
 const powerPlayUsed =
   powerPlayUsedTeams.self && powerPlayUsedTeams.opponent
 const [showMatchSettings, setShowMatchSettings] = useState(false)
+const [isBoardFlipped, setIsBoardFlipped] = useState(false)
 const [showShotRate, setShowShotRate] = useState(false)
 const [selectedShotRateMatchId, setSelectedShotRateMatchId] =
   useState<string | null>(null)
@@ -286,9 +287,9 @@ const [scoreboardEditTeam, setScoreboardEditTeam] = useState<'self' | 'opponent'
 const [scoreboardEditPoints, setScoreboardEditPoints] = useState(0)
 const [matchNote, setMatchNote] = useState('')
 const [savedMatches, setSavedMatches] = useState<SavedMatch[]>([])
-const [scrollPosition, setScrollPosition] = useState(0)
 
 const [undoHistory, setUndoHistory] = useState<UndoState[]>([])
+const [redoHistory, setRedoHistory] = useState<UndoState[]>([])
 
   const [selectedStoneId, setSelectedStoneIdState] =
     useState<number | null>(null)
@@ -319,36 +320,6 @@ const [pendingStone, setPendingStone] =
 
   const svgRef = useRef<SVGSVGElement | null>(null)
   const draggedItemRef = useRef<ActiveBoardDrag | null>(null)
-
-  useEffect(() => {
-    const updateScrollPosition = () => {
-      const scrollableHeight =
-        document.documentElement.scrollHeight - window.innerHeight
-      setScrollPosition(
-        scrollableHeight > 0
-          ? Math.round((window.scrollY / scrollableHeight) * 1000) / 10
-          : 0,
-      )
-    }
-
-    updateScrollPosition()
-    window.addEventListener('scroll', updateScrollPosition, { passive: true })
-    window.addEventListener('resize', updateScrollPosition)
-
-    return () => {
-      window.removeEventListener('scroll', updateScrollPosition)
-      window.removeEventListener('resize', updateScrollPosition)
-    }
-  }, [])
-
-  const handleScrollRailChange = (value: string) => {
-    const scrollableHeight =
-      document.documentElement.scrollHeight - window.innerHeight
-    window.scrollTo({
-      top: (Number(value) / 100) * Math.max(0, scrollableHeight),
-      behavior: 'auto',
-    })
-  }
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
@@ -521,8 +492,7 @@ const [pendingStone, setPendingStone] =
     ),
   })
 
- const saveUndoState = () => {
-  const snapshot: UndoState = {
+const createUndoSnapshot = (): UndoState => ({
     stones: stones.map((stone) => ({ ...stone })),
     currentEnd,
     currentThrow,
@@ -541,12 +511,36 @@ const [pendingStone, setPendingStone] =
       ...record,
       stones: record.stones.map((stone) => ({ ...stone })),
     })),
-  }
+  })
 
+const restoreUndoSnapshot = (snapshot: UndoState) => {
+  setStones(snapshot.stones.map((stone) => ({ ...stone })))
+  setCurrentEnd(snapshot.currentEnd)
+  setCurrentThrow(snapshot.currentThrow)
+  setScoreSelf(snapshot.scoreSelf)
+  setScoreOpponent(snapshot.scoreOpponent)
+  setHammerTeam(snapshot.hammerTeam)
+  setEndResults(snapshot.endResults.map((item) => ({ ...item })))
+  setPowerPlayEnds([...snapshot.powerPlayEnds])
+  setPowerPlayUsedTeams({ ...snapshot.powerPlayUsedTeams })
+  setEndPoints(snapshot.endPoints)
+  setPendingStone(snapshot.pendingStone ? { ...snapshot.pendingStone } : null)
+  setNextStoneId(snapshot.nextStoneId)
+  setThrowHistory(
+    snapshot.throwHistory.map((record) => ({
+      ...record,
+      stones: record.stones.map((stone) => ({ ...stone })),
+    })),
+  )
+}
+
+const saveUndoState = () => {
+  const snapshot = createUndoSnapshot()
   setUndoHistory((current) => [
     ...current,
     snapshot,
   ])
+  setRedoHistory([])
 }
 
 const handleUndo = () => {
@@ -556,42 +550,23 @@ const handleUndo = () => {
 
   const previousState =
     undoHistory[undoHistory.length - 1]
-
-  setStones(
-    previousState.stones.map((stone) => ({
-      ...stone,
-    })),
-  )
-  setCurrentEnd(previousState.currentEnd)
-  setCurrentThrow(previousState.currentThrow)
-  setScoreSelf(previousState.scoreSelf)
-  setScoreOpponent(previousState.scoreOpponent)
-  setHammerTeam(previousState.hammerTeam)
-  setEndResults(
-    previousState.endResults.map((item) => ({
-      ...item,
-    })),
-  )
-  setPowerPlayEnds([...previousState.powerPlayEnds])
-  setPowerPlayUsedTeams({ ...previousState.powerPlayUsedTeams })
-  setEndPoints(previousState.endPoints)
-  setPendingStone(
-    previousState.pendingStone
-      ? { ...previousState.pendingStone }
-      : null,
-  )
-  setNextStoneId(previousState.nextStoneId)
-  setThrowHistory(
-    previousState.throwHistory.map((record) => ({
-      ...record,
-      stones: record.stones.map((stone) => ({ ...stone })),
-    })),
-  )
-
+  setRedoHistory((current) => [...current, createUndoSnapshot()])
   setUndoHistory((current) =>
     current.slice(0, -1),
   )
+  restoreUndoSnapshot(previousState)
+  setSelectedStoneId(null)
+}
 
+const handleRedo = () => {
+  if (redoHistory.length === 0) {
+    return
+  }
+
+  const nextState = redoHistory[redoHistory.length - 1]
+  setUndoHistory((current) => [...current, createUndoSnapshot()])
+  setRedoHistory((current) => current.slice(0, -1))
+  restoreUndoSnapshot(nextState)
   setSelectedStoneId(null)
 }
 
@@ -1275,6 +1250,7 @@ const clearCurrentMatch = () => {
   setSettingsStartEnd(1)
   setMatchNote('')
   setUndoHistory([])
+  setRedoHistory([])
   setSelectedStoneId(null)
   setPendingStone({
     id: 1,
@@ -2016,15 +1992,16 @@ const clearCurrentMatch = () => {
           リセットして最初の設定画面へ
         </button>
       </div>
-      <div style={{ display: 'grid', gap: '10px', marginTop: '12px' }}>
-        <div>
+      <div className="match-start-fields" style={{ marginTop: '12px' }}>
+        <div className="match-start-field">
           <label style={{ display: 'block', marginBottom: '6px' }}>
             開始するエンド
           </label>
           <select
+            className="compact-setting-select"
             value={settingsStartEnd}
             onChange={(event) => setSettingsStartEnd(Number(event.target.value))}
-            style={{ display: 'block', width: '100%', padding: '6px' }}
+            style={{ padding: '6px' }}
           >
             {Array.from({ length: maxEnds }, (_, index) => index + 1).map((end) => (
               <option key={end} value={end}>
@@ -2033,14 +2010,15 @@ const clearCurrentMatch = () => {
             ))}
           </select>
         </div>
-        <div>
+        <div className="match-start-field">
           <label style={{ display: 'block', marginBottom: '6px' }}>
             開始する投目
           </label>
           <select
+            className="compact-setting-select"
             value={settingsStartThrow}
             onChange={(event) => setSettingsStartThrow(Number(event.target.value))}
-            style={{ display: 'block', width: '100%', padding: '6px' }}
+            style={{ padding: '6px' }}
           >
             {Array.from({ length: maxThrowsPerEnd }, (_, index) => index + 1).map((throwNumber) => (
               <option key={throwNumber} value={throwNumber}>
@@ -2049,7 +2027,7 @@ const clearCurrentMatch = () => {
             ))}
           </select>
         </div>
-        <div>
+        <div className="match-start-field match-start-hammer">
           <label style={{ display: 'block', marginBottom: '6px' }}>
             開始時のハンマー
           </label>
@@ -2076,13 +2054,14 @@ const clearCurrentMatch = () => {
       {showScoreboardEdit ? (
         <div style={{ marginTop: '12px', padding: '12px', borderRadius: '10px', background: '#fefefe', border: '1px solid #cbd5e1' }}>
           <div style={{ fontWeight: '700', marginBottom: '8px' }}>スコアボードのみ編集</div>
-          <div style={{ display: 'grid', gap: '10px' }}>
-            <label>
+          <div className="scoreboard-edit-fields">
+            <label className="scoreboard-edit-field">
               エンド
               <select
+                className="compact-setting-select"
                 value={scoreboardEditEnd}
                 onChange={(event) => setScoreboardEditEnd(Number(event.target.value))}
-                style={{ display: 'block', width: '100%', padding: '6px', marginTop: '4px' }}
+                style={{ padding: '6px', marginTop: '4px' }}
               >
                 {Array.from({ length: maxEnds }, (_, index) => index + 1).map((end) => (
                   <option key={end} value={end}>
@@ -2091,9 +2070,9 @@ const clearCurrentMatch = () => {
                 ))}
               </select>
             </label>
-            <div>
+            <div className="scoreboard-edit-field scoreboard-edit-team">
               <div style={{ marginBottom: '6px' }}>得点を取ったチーム</div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="scoreboard-edit-team-buttons">
                 {(['self', 'opponent'] as const).map((team) => (
                   <button
                     key={team}
@@ -2112,12 +2091,13 @@ const clearCurrentMatch = () => {
                 ))}
               </div>
             </div>
-            <label>
+            <label className="scoreboard-edit-field">
               点数
               <select
+                className="compact-setting-select"
                 value={scoreboardEditPoints}
                 onChange={(event) => setScoreboardEditPoints(Number(event.target.value))}
-                style={{ display: 'block', width: '100%', padding: '6px', marginTop: '4px' }}
+                style={{ padding: '6px', marginTop: '4px' }}
               >
                 {Array.from({ length: 9 }, (_, index) => index).map((value) => (
                   <option key={value} value={value}>
@@ -2127,11 +2107,10 @@ const clearCurrentMatch = () => {
               </select>
             </label>
           </div>
-          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+          <div className="scoreboard-edit-actions">
             <button
               onClick={handleApplyScoreboardCorrection}
               style={{
-                flex: 1,
                 padding: '9px 12px',
                 borderRadius: '8px',
                 border: '1px solid #2878d7',
@@ -2884,7 +2863,21 @@ const clearCurrentMatch = () => {
     : 'pointer',
   }}
 >
-  ↩ Undo
+  戻る
+</button>
+<button
+  onClick={handleRedo}
+  disabled={redoHistory.length === 0}
+  style={{
+    padding: '8px 16px',
+    borderRadius: '8px',
+    border: '1px solid #ccc',
+    background: redoHistory.length === 0 ? '#eee' : '#fff',
+    color: redoHistory.length === 0 ? '#999' : '#222',
+    cursor: redoHistory.length === 0 ? 'default' : 'pointer',
+  }}
+>
+  進む
 </button>
 
 <button
@@ -3043,6 +3036,23 @@ const clearCurrentMatch = () => {
         </div>
       )}
 
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+        <button
+          type="button"
+          aria-pressed={isBoardFlipped}
+          onClick={() => setIsBoardFlipped((current) => !current)}
+          style={{
+            padding: '7px 12px',
+            borderRadius: '6px',
+            border: '1px solid #cbd5e1',
+            background: isBoardFlipped ? '#eaf3ff' : '#fff',
+            cursor: 'pointer',
+          }}
+        >
+          {isBoardFlipped ? '標準向きに戻す' : 'ハウスを上下反転'}
+        </button>
+      </div>
+
       <p
         style={{
           margin: '0 0 10px',
@@ -3067,6 +3077,9 @@ const clearCurrentMatch = () => {
           display: 'block',
           touchAction: 'none',
           userSelect: 'none',
+          transform: isBoardFlipped ? 'scaleY(-1)' : undefined,
+          transformOrigin: 'center',
+          transformBox: 'fill-box',
         }}
       >
         {/* Sheet */}
@@ -3653,16 +3666,6 @@ const clearCurrentMatch = () => {
         )}
       </div>
     )}
-    <input
-      className="scroll-rail"
-      type="range"
-      min="0"
-      max="100"
-      step="0.1"
-      value={scrollPosition}
-      onChange={(event) => handleScrollRailChange(event.target.value)}
-      aria-label="ページをスクロール"
-    />
   </div>
 </div>
     </div>
