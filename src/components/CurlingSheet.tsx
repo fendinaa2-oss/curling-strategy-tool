@@ -278,6 +278,8 @@ const [selectedShotRateMatchId, setSelectedShotRateMatchId] =
 const [matchFinished, setMatchFinished] = useState(false)
 const [settingsStartEnd, setSettingsStartEnd] = useState(1)
 const [settingsStartThrow, setSettingsStartThrow] = useState(1)
+const [settingsStartHammer, setSettingsStartHammer] =
+  useState<'self' | 'opponent'>(initialHammerTeam)
 const [showScoreboardEdit, setShowScoreboardEdit] = useState(false)
 const [scoreboardEditEnd, setScoreboardEditEnd] = useState(1)
 const [scoreboardEditTeam, setScoreboardEditTeam] = useState<'self' | 'opponent'>('self')
@@ -1089,6 +1091,10 @@ const handleSaveCurrentMatch = () => {
 const handleApplyMatchSettings = () => {
   const targetEnd = Math.max(1, Math.min(maxEnds, settingsStartEnd))
   const targetThrow = Math.max(1, Math.min(maxThrowsPerEnd, settingsStartThrow))
+  const targetThrower =
+    (targetThrow % 2 === 1) === (settingsStartHammer === 'opponent')
+      ? 'self'
+      : 'opponent'
   const keptEndResults = endResults.slice(0, targetEnd - 1)
   const keptPowerPlayEnds = powerPlayEnds.filter((end) => end < targetEnd)
   const keptHistory = throwHistory.filter(
@@ -1109,6 +1115,7 @@ const handleApplyMatchSettings = () => {
   setStones([])
   setCurrentEnd(targetEnd)
   setCurrentThrow(targetThrow)
+  setHammerTeam(settingsStartHammer)
   setThrowHistory(keptHistory)
   setEndResults(keptEndResults)
   setPowerPlayEnds(keptPowerPlayEnds)
@@ -1128,7 +1135,7 @@ const handleApplyMatchSettings = () => {
   setSelectedStoneId(null)
   setPendingStone({
     id: 1,
-    color: 'red',
+    color: targetThrower === 'self' ? teamColor : getOpponentColor(teamColor),
     x: WAITING_STONE_X,
     y: WAITING_STONE_Y,
     out: false,
@@ -1614,6 +1621,7 @@ const clearCurrentMatch = () => {
             setMatchFinished(false)
             setShowMatchSettings(true)
             setSettingsStartEnd(currentEnd)
+            setSettingsStartHammer(hammerTeam)
           }}
           style={{
             display: 'block',
@@ -2040,6 +2048,29 @@ const clearCurrentMatch = () => {
               </option>
             ))}
           </select>
+        </div>
+        <div>
+          <label style={{ display: 'block', marginBottom: '6px' }}>
+            開始時のハンマー
+          </label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {(['self', 'opponent'] as const).map((team) => (
+              <button
+                key={team}
+                onClick={() => setSettingsStartHammer(team)}
+                style={{
+                  flex: 1,
+                  padding: '8px 10px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: settingsStartHammer === team ? '#eaf3ff' : '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                {team === 'self' ? '自チーム' : '相手チーム'}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       {showScoreboardEdit ? (
@@ -2914,6 +2945,7 @@ const clearCurrentMatch = () => {
   onClick={() => {
     setSettingsStartEnd(currentEnd)
     setSettingsStartThrow(currentThrow)
+    setSettingsStartHammer(hammerTeam)
     setShowMatchSettings((current) => !current)
   }}
   style={{

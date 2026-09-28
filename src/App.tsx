@@ -6,6 +6,7 @@ type MatchFormat = 'four-person' | 'mixed-doubles'
 type TeamColor = 'red' | 'yellow'
 type Hammer = 'self' | 'opponent'
 const APP_STORAGE_KEY = 'curling-strategy-tool-app-state-v1'
+const ACCESS_PIN = 'irumitto'
 type MixedDoublesGuardPosition =
   | 'A1-house'
   | 'A1-hog'
@@ -31,6 +32,9 @@ function App() {
   const [playerNames, setPlayerNames] = useState(['', '', '', ''])
   const [savedMatches, setSavedMatches] = useState<SavedMatch[]>([])
   const [savedMatchToLoad, setSavedMatchToLoad] = useState<SavedMatch | null>(null)
+  const [accessPin, setAccessPin] = useState('')
+  const [showPinError, setShowPinError] = useState(false)
+  const [accessGranted, setAccessGranted] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem(APP_STORAGE_KEY)
@@ -155,7 +159,18 @@ function App() {
     localStorage.removeItem('curling-strategy-tool-app-state-v1')
   }
 
+  const verifyAccessPin = () => {
+    const isValid = accessPin === ACCESS_PIN
+    setShowPinError(!isValid)
+    setAccessGranted(isValid)
+    return isValid
+  }
+
   const loadSavedMatchFromStart = (match: SavedMatch) => {
+    if (!verifyAccessPin()) {
+      return
+    }
+
     setFormat(match.matchFormat)
     setEndCount(match.endCount ?? (match.matchFormat === 'four-person' ? 10 : 8))
     setCustomEndCount(String(match.endCount ?? (match.matchFormat === 'four-person' ? 10 : 8)))
@@ -179,6 +194,10 @@ function App() {
   }
 
   const handleStartMatch = () => {
+    if (!verifyAccessPin()) {
+      return
+    }
+
     if (format === 'mixed-doubles') {
       setShowMixedDoublesSetup(true)
       return
@@ -190,6 +209,45 @@ function App() {
   const handleStartMixedDoubles = () => {
     setShowMixedDoublesSetup(false)
     setMatchStarted(true)
+  }
+
+  if (matchStarted && !accessGranted) {
+    return (
+      <main className="app">
+        <section className="start-screen">
+          <header className="app-header">
+            <p className="app-label">CURLING</p>
+            <h1>PIN入力</h1>
+          </header>
+          <div className="settings-card">
+            <label>
+              PIN
+              <input
+                type="password"
+                value={accessPin}
+                onChange={(event) => {
+                  setAccessPin(event.target.value)
+                  setShowPinError(false)
+                }}
+                autoComplete="off"
+                placeholder="PINを入力"
+              />
+            </label>
+            {showPinError && (
+              <p role="alert" style={{ margin: '8px 0 0', color: '#b42318' }}>
+                PINが正しくありません。
+              </p>
+            )}
+            <button
+              className="start-button"
+              onClick={verifyAccessPin}
+            >
+              続ける
+            </button>
+          </div>
+        </section>
+      </main>
+    )
   }
 
   return (
@@ -427,6 +485,24 @@ function App() {
           <button className="start-button" onClick={handleStartMatch}>
             試合を開始
           </button>
+          <label style={{ marginTop: '14px' }}>
+            PIN
+            <input
+              type="password"
+              value={accessPin}
+              onChange={(event) => {
+                setAccessPin(event.target.value)
+                setShowPinError(false)
+              }}
+              autoComplete="off"
+              placeholder="PINを入力"
+            />
+          </label>
+          {showPinError && (
+            <p role="alert" style={{ margin: '8px 0 0', color: '#b42318' }}>
+              PINが正しくありません。
+            </p>
+          )}
         </div>
       </section>}
       {!matchStarted && showMixedDoublesSetup && (
