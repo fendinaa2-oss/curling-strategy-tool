@@ -7,6 +7,15 @@ type TeamColor = 'red' | 'yellow'
 type Hammer = 'self' | 'opponent'
 const APP_STORAGE_KEY = 'curling-strategy-tool-app-state-v1'
 const ACCESS_PIN = 'irumitto'
+const getTeamColorLabel = (team: Hammer, teamColor: TeamColor) => {
+  const color = team === 'self'
+    ? teamColor
+    : teamColor === 'red'
+      ? 'yellow'
+      : 'red'
+
+  return color === 'red' ? '赤チーム' : '黄チーム'
+}
 type MixedDoublesGuardPosition =
   | 'A1-house'
   | 'A1-hog'
@@ -360,7 +369,7 @@ function App() {
           </div>
 
           <div className="setting-section">
-            <h2>自チームの色</h2>
+            <h2>チームカラー</h2>
 
             <div className="choice-grid two-columns">
               <button
@@ -370,7 +379,7 @@ function App() {
                 onClick={() => setTeamColor('red')}
               >
                 <span className="color-dot red" />
-                赤
+                赤チーム
               </button>
 
               <button
@@ -380,7 +389,7 @@ function App() {
                 onClick={() => setTeamColor('yellow')}
               >
                 <span className="color-dot yellow" />
-                黄
+                黄チーム
               </button>
             </div>
           </div>
@@ -395,7 +404,7 @@ function App() {
                 }`}
                 onClick={() => setHammer('self')}
               >
-                自チーム
+                {getTeamColorLabel('self', teamColor)}
               </button>
 
               <button
@@ -404,7 +413,7 @@ function App() {
                 }`}
                 onClick={() => setHammer('opponent')}
               >
-                相手チーム
+                {getTeamColorLabel('opponent', teamColor)}
               </button>
             </div>
           </div>
@@ -414,7 +423,7 @@ function App() {
 
             <div className="input-grid">
               <label>
-                自チーム名
+                {getTeamColorLabel('self', teamColor)}名
                 <input
                   type="text"
                   value={teamName}
@@ -424,7 +433,7 @@ function App() {
               </label>
 
               <label>
-                相手チーム名
+                {getTeamColorLabel('opponent', teamColor)}名
                 <input
                   type="text"
                   value={opponentName}
@@ -472,13 +481,13 @@ function App() {
             </div>
 
             <div>
-              <span>自チーム</span>
-              <strong>{teamColor === 'red' ? '赤' : '黄'}</strong>
+              <span>チームカラー</span>
+              <strong>{getTeamColorLabel('self', teamColor)}</strong>
             </div>
 
             <div>
               <span>ハンマー</span>
-              <strong>{hammer === 'self' ? '自チーム' : '相手'}</strong>
+              <strong>{getTeamColorLabel(hammer, teamColor)}</strong>
             </div>
           </div>
 
@@ -554,11 +563,11 @@ function App() {
               <div className="match-summary">
                 <div>
                   <span>先行チーム</span>
-                  <strong>{hammer === 'self' ? '相手チーム' : '自チーム'}</strong>
+                  <strong>{getTeamColorLabel(hammer === 'self' ? 'opponent' : 'self', teamColor)}</strong>
                 </div>
                 <div>
                   <span>後攻チーム</span>
-                  <strong>{hammer === 'self' ? '自チーム' : '相手チーム'}</strong>
+                  <strong>{getTeamColorLabel(hammer === 'self' ? 'self' : 'opponent', teamColor)}</strong>
                 </div>
                 <div>
                   <span>ガード</span>

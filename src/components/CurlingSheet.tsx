@@ -154,6 +154,14 @@ const MIXED_DOUBLES_GUARD_DISTANCES: Record<
 const getOpponentColor = (teamColor: TeamColor): TeamColor =>
   teamColor === 'red' ? 'yellow' : 'red'
 
+const getTeamColorLabel = (
+  team: 'self' | 'opponent',
+  teamColor: TeamColor,
+) => {
+  const color = team === 'self' ? teamColor : getOpponentColor(teamColor)
+  return color === 'red' ? '赤チーム' : '黄チーム'
+}
+
 const getFirstThrowColor = (
   teamColor: TeamColor,
   hammerTeam: 'self' | 'opponent',
@@ -965,6 +973,7 @@ const handlePrintMatch = (match: SavedMatch) => {
       .join('')
 
     return `<svg class="mini-sheet" viewBox="0 ${BOARD_TOP_Y * scaleX} ${sheetWidth} ${sheetHeight}" role="img" aria-label="${record.endNumber}エンド ${record.throwNumber}投目">
+      <g transform="translate(0 ${(BOARD_TOP_Y + BOARD_BOTTOM_Y) * scaleX}) scale(1 -1)">
       <rect x="0" y="${BOARD_TOP_Y * scaleX}" width="${sheetWidth}" height="${sheetHeight}" fill="#fff" />
       <circle cx="${centerX}" cy="${houseY}" r="${houseRadii[0]}" fill="#e8f3f7" stroke="#c8d5da" stroke-width="0.8" />
       <circle cx="${centerX}" cy="${houseY}" r="${houseRadii[1]}" fill="#fff" stroke="#c8d5da" stroke-width="0.8" />
@@ -975,6 +984,7 @@ const handlePrintMatch = (match: SavedMatch) => {
       <line x1="0" y1="${toPrintY(0)}" x2="${sheetWidth}" y2="${toPrintY(0)}" stroke="#c8d5da" stroke-width="0.8" />
       <line x1="0" y1="${toPrintY(HOG_LINE_Y)}" x2="${sheetWidth}" y2="${toPrintY(HOG_LINE_Y)}" stroke="#aebdc3" stroke-width="1" />
       ${stones}
+      </g>
     </svg>`
   }
 
@@ -995,24 +1005,143 @@ const handlePrintMatch = (match: SavedMatch) => {
     )
     .join('')
 
+  const reportEndCount =
+    match.endCount ?? (match.matchFormat === 'four-person' ? 10 : 8)
+  const reportEnds = Array.from(
+    { length: reportEndCount },
+    (_, index) => index + 1,
+  )
+  const renderScoreRow = (team: 'self' | 'opponent') => {
+    const endScores = reportEnds
+      .map((end) => {
+        const result = match.endResults[end - 1]
+        const score = !result
+          ? ''
+          : result.result === 'blank'
+            ? '0'
+            : result.result === team
+              ? String(result.points)
+              : ''
+        return `<td>${score}</td>`
+      })
+      .join('')
+    const total = team === 'self' ? match.scoreSelf : match.scoreOpponent
+
+    return `<tr><th>${getTeamColorLabel(team, match.teamColor ?? 'red')}</th>${endScores}<td>-</td><td class="total-score">${total}</td></tr>`
+  }
+  const reportShotPositions = [
+    { name: 'リード', throws: [1, 2] },
+    { name: 'セカンド', throws: [3, 4] },
+    { name: 'サード', throws: [5, 6] },
+    { name: 'フォース', throws: [7, 8] },
+  ]
+  const reportInitialHammer = match.initialHammerTeam ?? 'self'
+  const reportFirstTeam = reportInitialHammer === 'opponent' ? 'self' : 'opponent'
+  const getReportShotRate = (
+    team: 'self' | 'opponent',
+    teamThrowNumber: number,
+  ) => {
+    const records = match.throwHistory.filter((record) => {
+      const recordTeam =
+        record.throwerTeam ??
+        (record.throwNumber % 2 === 1
+          ? reportFirstTeam
+          : reportFirstTeam === 'self'
+            ? 'opponent'
+            : 'self')
+      const calculatedTeamThrowNumber =
+        recordTeam === reportFirstTeam
+          ? Math.ceil(record.throwNumber / 2)
+          : Math.ceil((record.throwNumber - 1) / 2)
+
+      return recordTeam === team && calculatedTeamThrowNumber === teamThrowNumber
+    })
+
+    if (records.length === 0) {
+      return null
+    }
+
+    return (
+      (records.reduce((sum, record) => sum + record.rating, 0) /
+        (records.length * 4)) *
+      100
+    )
+  }
+  const reportShotRateRows = (['self', 'opponent'] as const)
+    .map((team) => {
+      const teamLabel = getTeamColorLabel(team, match.teamColor ?? 'red')
+
+      return reportShotPositions
+        .map((position, index) => {
+          const rates = position.throws.map((throwNumber) =>
+            getReportShotRate(team, throwNumber),
+          )
+          const availableRates = rates.filter(
+            (rate): rate is number => rate !== null,
+          )
+          const average = availableRates.length
+            ? availableRates.reduce((sum, rate) => sum + rate, 0) /
+              availableRates.length
+            : null
+          const rateCells = [...rates, average]
+            .map((rate) => `<td>${rate === null ? '-' : `${rate.toFixed(1)}%`}</td>`)
+            .join('')
+          const teamCell = index === 0
+            ? `<th rowspan="4">${teamLabel}</th>`
+            : ''
+
+          return `<tr>${teamCell}<th>${position.name}</th>${rateCells}</tr>`
+        })
+        .join('')
+    })
+    .join('')
+  const summaryPageClass = match.throwHistory.length > 0 ? ' summary-page' : ''
+
   printWindow.document.write(`<!doctype html><html><head><title>Curling match report</title><style>
     @page { size: A4 landscape; margin: 7mm; }
     body { font-family: sans-serif; font-size: 9px; color: #111; }
     h1 { font-size: 13px; margin: 0 0 3px; }
     p { margin: 1px 0; font-size: 7px; }
     .throw-page { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 2mm 2mm; height: 165mm; page-break-after: always; break-after: page; }
-    .throw-page:last-child { page-break-after: auto; break-after: auto; }
+    .throw-page:last-of-type { page-break-after: auto; break-after: auto; }
     .throw-card { border: 0; padding: 0; break-inside: avoid; page-break-inside: avoid; min-width: 0; overflow: hidden; }
     .mini-sheet { display: block; width: 100%; height: auto; aspect-ratio: ${sheetWidth} / ${sheetHeight}; border: 1px solid #bbb; }
     .throw-meta { font-size: 5.5px; line-height: 1.1; margin-top: 1px; overflow-wrap: anywhere; }
     .throw-note { font-size: 5.5px; line-height: 1.1; min-height: 8px; margin-top: 1px; overflow-wrap: anywhere; }
+    .summary-page { page-break-before: always; break-before: page; }
+    .report-summary h2 { font-size: 11px; margin: 0 0 2mm; }
+    .report-summary section { margin-top: 5mm; }
+    .report-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 7px; }
+    .report-table th, .report-table td { border: 1px solid #888; padding: 1.2mm 0.6mm; text-align: center; }
+    .report-table thead th, .report-table tbody th { background: #f0f2f4; }
+    .report-table tbody th { text-align: left; }
+    .score-table th:first-child { width: 25mm; }
+    .score-table .total-score { font-weight: 700; }
+    .shot-rate-table th:first-child { width: 25mm; }
+    .shot-rate-table th:nth-child(2) { width: 24mm; }
   </style></head><body>
     <h1>カーリング試合レポート</h1>
     <p>形式: ${match.matchFormat === 'four-person' ? '4人制' : 'Mixed Doubles'}</p>
     <p>保存日時: ${new Date(match.savedAt).toLocaleString()}</p>
-    <p>最終スコア: 自チーム ${match.scoreSelf} - ${match.scoreOpponent} 相手</p>
+    <p>最終スコア: ${getTeamColorLabel('self', match.teamColor ?? 'red')} ${match.scoreSelf} - ${match.scoreOpponent} ${getTeamColorLabel('opponent', match.teamColor ?? 'red')}</p>
     <p>試合メモ: ${escapeHtml(match.matchNote || '-')}</p>
     ${throwPages}
+    <main class="report-summary${summaryPageClass}">
+      <section>
+        <h2>最終スコアボード</h2>
+        <table class="report-table score-table">
+          <thead><tr><th></th>${reportEnds.map((end) => `<th>${end}</th>`).join('')}<th>EE</th><th>合計</th></tr></thead>
+          <tbody>${renderScoreRow('self')}${renderScoreRow('opponent')}</tbody>
+        </table>
+      </section>
+      <section>
+        <h2>ショット率</h2>
+        <table class="report-table shot-rate-table">
+          <thead><tr><th>チーム</th><th>ポジション</th><th>1投目</th><th>2投目</th><th>平均</th></tr></thead>
+          <tbody>${reportShotRateRows}</tbody>
+        </table>
+      </section>
+    </main>
   </body></html>`)
   printWindow.document.close()
   printWindow.focus()
@@ -1589,7 +1718,7 @@ const clearCurrentMatch = () => {
       <div className="curling-sheet">
         <h2>試合終了</h2>
         <p>
-          最終スコア：自チーム {scoreSelf} - {scoreOpponent} 相手
+          最終スコア：{getTeamColorLabel('self', teamColor)} {scoreSelf} - {scoreOpponent} {getTeamColorLabel('opponent', teamColor)}
         </p>
         <strong>{matchWinner}</strong>
         <button
@@ -1666,7 +1795,7 @@ const clearCurrentMatch = () => {
             border: '1px solid #e2e8f0',
           }}
         >
-          現在のスコア：自チーム {scoreSelf} - {scoreOpponent} 相手
+          現在のスコア：{getTeamColorLabel('self', teamColor)} {scoreSelf} - {scoreOpponent} {getTeamColorLabel('opponent', teamColor)}
         </div>
 
         <div
@@ -1678,8 +1807,8 @@ const clearCurrentMatch = () => {
           }}
         >
           {([
-            ['self', '自チーム'],
-            ['opponent', '相手'],
+            ['self', getTeamColorLabel('self', teamColor)],
+            ['opponent', getTeamColorLabel('opponent', teamColor)],
             ['blank', 'ブランク'],
           ] as const).map(([value, label]) => (
             <button
@@ -1760,9 +1889,9 @@ const clearCurrentMatch = () => {
           >
             確定内容：
             {endResult === 'self'
-              ? `自チーム ${endPoints}点`
+              ? `${getTeamColorLabel('self', teamColor)} ${endPoints}点`
               : endResult === 'opponent'
-                ? `相手 ${endPoints}点`
+                ? `${getTeamColorLabel('opponent', teamColor)} ${endPoints}点`
                 : 'ブランク 0点'}
           </div>
         )}
@@ -1812,7 +1941,7 @@ const clearCurrentMatch = () => {
                           color: powerPlayUsedTeams[team] ? '#999' : '#222',
                         }}
                       >
-                        {team === 'self' ? '自チーム' : '相手チーム'}{powerPlayUsedTeams[team] ? '（使用済み）' : ''}
+                        {getTeamColorLabel(team, teamColor)}{powerPlayUsedTeams[team] ? '（使用済み）' : ''}
                       </button>
                     ))}
                   </div>
@@ -2045,7 +2174,7 @@ const clearCurrentMatch = () => {
                   cursor: 'pointer',
                 }}
               >
-                {team === 'self' ? '自チーム' : '相手チーム'}
+                {getTeamColorLabel(team, teamColor)}
               </button>
             ))}
           </div>
@@ -2086,7 +2215,7 @@ const clearCurrentMatch = () => {
                       cursor: 'pointer',
                     }}
                   >
-                    {team === 'self' ? '自分' : '相手'}
+                    {getTeamColorLabel(team, teamColor)}
                   </button>
                 ))}
               </div>
@@ -2232,8 +2361,8 @@ const clearCurrentMatch = () => {
           }}
         >
           {[
-            { label: '自チーム', isSelf: true },
-            { label: '相手チーム', isSelf: false },
+            { label: getTeamColorLabel('self', teamColor), isSelf: true },
+            { label: getTeamColorLabel('opponent', teamColor), isSelf: false },
           ].map(({ label, isSelf }) => (
             <table
               key={label}
@@ -2604,7 +2733,7 @@ const clearCurrentMatch = () => {
           cursor: 'pointer',
         }}
       >
-        自チーム ハンマー
+        {getTeamColorLabel('self', teamColor)} ハンマー
       </button>
       <button
         onClick={() => setHammerTeam('opponent')}
@@ -2620,7 +2749,7 @@ const clearCurrentMatch = () => {
           cursor: 'pointer',
         }}
       >
-        相手ハンマー
+        {getTeamColorLabel('opponent', teamColor)} ハンマー
       </button>
     </div>
 
@@ -2637,8 +2766,8 @@ const clearCurrentMatch = () => {
         このエンドの結果
       </span>
       {([
-        ['self', '自チーム'],
-        ['opponent', '相手'],
+        ['self', getTeamColorLabel('self', teamColor)],
+        ['opponent', getTeamColorLabel('opponent', teamColor)],
         ['blank', 'ブランク'],
       ] as const).map(([value, label]) => (
         <button
@@ -2686,9 +2815,9 @@ const clearCurrentMatch = () => {
       >
         このエンドの結果：
         {endResult === 'self'
-          ? `自チーム ${endPoints}点`
+          ? `${getTeamColorLabel('self', teamColor)} ${endPoints}点`
           : endResult === 'opponent'
-            ? `相手 ${endPoints}点`
+            ? `${getTeamColorLabel('opponent', teamColor)} ${endPoints}点`
             : 'ブランク 0点'}
         <span
           style={{
@@ -2796,7 +2925,7 @@ const clearCurrentMatch = () => {
     <textarea
       value={matchNote}
       onChange={(event) => setMatchNote(event.target.value)}
-      placeholder="例：右側のリミットを狙う。相手のハウスを詰める。"
+      placeholder={`例：右側のリミットを狙う。${getTeamColorLabel('opponent', teamColor)}のハウスを詰める。`}
       style={{
         width: '100%',
         minHeight: '60px',
@@ -2980,7 +3109,7 @@ const clearCurrentMatch = () => {
                   color: powerPlayUsedTeams[team] ? '#999' : '#222',
                 }}
               >
-                {team === 'self' ? '自チーム' : '相手チーム'}{powerPlayUsedTeams[team] ? '（使用済み）' : ''}
+                {getTeamColorLabel(team, teamColor)}{powerPlayUsedTeams[team] ? '（使用済み）' : ''}
               </button>
             ))}
           </div>
@@ -3568,6 +3697,7 @@ const clearCurrentMatch = () => {
                             borderRadius: '6px',
                           }}
                         >
+                          <g transform={`translate(0 ${(BOARD_TOP_Y + BOARD_BOTTOM_Y) * SCALE}) scale(1 -1)`}>
                           <rect
                             x="0"
                             y={BOARD_TOP_Y * SCALE}
@@ -3656,6 +3786,7 @@ const clearCurrentMatch = () => {
                                 strokeWidth="1.2"
                               />
                             ))}
+                          </g>
                         </svg>
                       </div>
                     </div>
