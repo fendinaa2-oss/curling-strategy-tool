@@ -1,4 +1,4 @@
-const CACHE_NAME = 'curling-strategy-tool-v1'
+const CACHE_NAME = 'curling-strategy-tool-v2'
 const APP_SHELL = ['/', '/index.html', '/favicon.svg', '/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {

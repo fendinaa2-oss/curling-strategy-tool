@@ -137,6 +137,57 @@ const SHOT_TYPES: ShotType[] = [
   'Other',
 ]
 
+const getOpponentTeam = (team: 'self' | 'opponent') =>
+  team === 'self' ? 'opponent' : 'self'
+
+const getFirstThrowingTeam = (hammerTeam: 'self' | 'opponent') =>
+  getOpponentTeam(hammerTeam)
+
+const getThrowDisplayLabel = (
+  matchFormat: MatchFormat,
+  throwNumber: number,
+  firstThrowingTeam: 'self' | 'opponent',
+  throwingTeam = throwNumber % 2 === 1
+    ? firstThrowingTeam
+    : getOpponentTeam(firstThrowingTeam),
+) => {
+  const isFirstTeam = throwingTeam === firstThrowingTeam
+  const teamThrowNumber = isFirstTeam
+    ? Math.ceil(throwNumber / 2)
+    : Math.floor(throwNumber / 2)
+  const side = isFirstTeam ? '先' : '後'
+
+  if (matchFormat === 'mixed-doubles') {
+    return `${side}${teamThrowNumber}投目`
+  }
+
+  const positions = ['L', 'S', 'T', 'F']
+  const positionIndex = Math.floor((teamThrowNumber - 1) / 2)
+  const position = positions[positionIndex] ?? ''
+  const positionThrowNumber = ((teamThrowNumber - 1) % 2) + 1
+
+  return `${side}${position}${positionThrowNumber}投目`
+}
+
+const getFirstThrowingTeamForEnd = (
+  throwHistory: ThrowRecord[],
+  endNumber: number,
+  fallbackHammerTeam: 'self' | 'opponent',
+) => {
+  const recordedThrower = throwHistory.find(
+    (record) =>
+      record.endNumber === endNumber && record.throwerTeam !== undefined,
+  )
+
+  if (!recordedThrower?.throwerTeam) {
+    return getFirstThrowingTeam(fallbackHammerTeam)
+  }
+
+  return recordedThrower.throwNumber % 2 === 1
+    ? recordedThrower.throwerTeam
+    : getOpponentTeam(recordedThrower.throwerTeam)
+}
+
 const MIXED_DOUBLES_GUARD_DISTANCES: Record<
   MixedDoublesGuardPosition,
   number
@@ -327,6 +378,7 @@ const [pendingStone, setPendingStone] =
   )
 
   const svgRef = useRef<SVGSVGElement | null>(null)
+  const boardGroupRef = useRef<SVGGElement | null>(null)
   const draggedItemRef = useRef<ActiveBoardDrag | null>(null)
 
   useEffect(() => {
@@ -469,7 +521,7 @@ const [pendingStone, setPendingStone] =
       return null
     }
 
-    const screenCtm = svg.getScreenCTM()
+    const screenCtm = boardGroupRef.current?.getScreenCTM()
 
     if (!screenCtm) {
       return null
@@ -956,12 +1008,25 @@ const handlePrintMatch = (match: SavedMatch) => {
   const sheetHeight = (sheetWidth * BOARD_VIEW_HEIGHT) / SHEET_WIDTH
   const centerX = sheetWidth / 2
   const scaleX = sheetWidth / SHEET_WIDTH
-  const toPrintX = (x: number) => x * scaleX
-  const toPrintY = (y: number) => (y - BOARD_TOP_Y) * scaleX
+  const toPrintX = (x: number) =>
+    (isBoardFlipped ? SHEET_WIDTH - x : x) * scaleX
+  const toPrintY = (y: number) =>
+    (isBoardFlipped ? BOARD_BOTTOM_Y - y : y - BOARD_TOP_Y) * scaleX
   const houseY = toPrintY(houseCenterY)
   const houseRadii = HOUSE_RADII.map((radius) => radius * scaleX)
 
   const renderPrintSheet = (record: ThrowRecord) => {
+    const firstThrowingTeam = getFirstThrowingTeamForEnd(
+      match.throwHistory,
+      record.endNumber,
+      match.initialHammerTeam ?? 'self',
+    )
+    const throwLabel = getThrowDisplayLabel(
+      match.matchFormat,
+      record.throwNumber,
+      firstThrowingTeam,
+      record.throwerTeam,
+    )
     const stones = record.stones
       .filter((stone) => !stone.out)
       .map(
@@ -972,27 +1037,39 @@ const handlePrintMatch = (match: SavedMatch) => {
       )
       .join('')
 
-    return `<svg class="mini-sheet" viewBox="0 ${BOARD_TOP_Y * scaleX} ${sheetWidth} ${sheetHeight}" role="img" aria-label="${record.endNumber}エンド ${record.throwNumber}投目">
-      <g transform="translate(0 ${(BOARD_TOP_Y + BOARD_BOTTOM_Y) * scaleX}) scale(1 -1)">
-      <rect x="0" y="${BOARD_TOP_Y * scaleX}" width="${sheetWidth}" height="${sheetHeight}" fill="#fff" />
+    return `<svg class="mini-sheet" viewBox="0 0 ${sheetWidth} ${sheetHeight}" role="img" aria-label="${record.endNumber}エンド ${throwLabel}">
+      <rect x="0" y="0" width="${sheetWidth}" height="${sheetHeight}" fill="#fff" />
       <circle cx="${centerX}" cy="${houseY}" r="${houseRadii[0]}" fill="#e8f3f7" stroke="#c8d5da" stroke-width="0.8" />
       <circle cx="${centerX}" cy="${houseY}" r="${houseRadii[1]}" fill="#fff" stroke="#c8d5da" stroke-width="0.8" />
       <circle cx="${centerX}" cy="${houseY}" r="${houseRadii[2]}" fill="#e8f3f7" stroke="#c8d5da" stroke-width="0.8" />
       <circle cx="${centerX}" cy="${houseY}" r="${houseRadii[3]}" fill="#fff" stroke="#c8d5da" stroke-width="0.8" />
-      <line x1="${centerX}" y1="${BOARD_TOP_Y * scaleX}" x2="${centerX}" y2="${BOARD_BOTTOM_Y * scaleX}" stroke="#c8d5da" stroke-width="0.8" />
+      <line x1="${centerX}" y1="0" x2="${centerX}" y2="${sheetHeight}" stroke="#c8d5da" stroke-width="0.8" />
       <line x1="0" y1="${houseY}" x2="${sheetWidth}" y2="${houseY}" stroke="#c8d5da" stroke-width="0.8" />
       <line x1="0" y1="${toPrintY(0)}" x2="${sheetWidth}" y2="${toPrintY(0)}" stroke="#c8d5da" stroke-width="0.8" />
       <line x1="0" y1="${toPrintY(HOG_LINE_Y)}" x2="${sheetWidth}" y2="${toPrintY(HOG_LINE_Y)}" stroke="#aebdc3" stroke-width="1" />
       ${stones}
-      </g>
     </svg>`
   }
 
-  const renderThrowCard = (record: ThrowRecord) => `<article class="throw-card">
+  const renderThrowCard = (record: ThrowRecord) => {
+    const firstThrowingTeam = getFirstThrowingTeamForEnd(
+      match.throwHistory,
+      record.endNumber,
+      match.initialHammerTeam ?? 'self',
+    )
+    const throwLabel = getThrowDisplayLabel(
+      match.matchFormat,
+      record.throwNumber,
+      firstThrowingTeam,
+      record.throwerTeam,
+    )
+
+    return `<article class="throw-card">
         ${renderPrintSheet(record)}
-        <div class="throw-meta"><strong>${record.endNumber}エンド ${record.throwNumber}投目</strong> / ${escapeHtml(record.shotType)} / 評価 ${record.rating}/4</div>
+        <div class="throw-meta"><strong>${record.endNumber}エンド ${throwLabel}</strong> / ${escapeHtml(record.shotType)} / 評価 ${record.rating}/4</div>
         <div class="throw-note">${escapeHtml(record.note || 'コメントなし')}</div>
       </article>`
+  }
 
   const throwPages = Array.from(
     { length: Math.ceil(match.throwHistory.length / 16) },
@@ -1512,7 +1589,7 @@ const clearCurrentMatch = () => {
 
     if (draggedItem.type === 'crosshair') {
       const svg = svgRef.current
-      const screenCtm = svg?.getScreenCTM()
+      const screenCtm = boardGroupRef.current?.getScreenCTM()
       const rawPosition = getRawPositionFromPointer(event)
 
       if (svg && screenCtm && rawPosition) {
@@ -1640,6 +1717,14 @@ const clearCurrentMatch = () => {
   const maxEnds = endCount
   const maxThrowsPerEnd =
     matchFormat === 'four-person' ? 16 : 10
+  const currentThrowLabel =
+    currentThrow <= maxThrowsPerEnd
+      ? getThrowDisplayLabel(
+          matchFormat,
+          currentThrow,
+          getFirstThrowingTeam(hammerTeam),
+        )
+      : '投球終了'
 
   const totalRating = throwHistory.reduce(
     (sum, record) => sum + record.rating,
@@ -2050,7 +2135,7 @@ const clearCurrentMatch = () => {
       {selfTeamName} vs {opponentTeamName}
     </div>
     <div style={{ fontSize: '20px', fontWeight: 'bold' }}>
-      {currentEnd}エンド　{currentThrow}投目 / 全{maxEnds}エンド
+      {currentEnd}エンド　{currentThrowLabel} / 全{maxEnds}エンド
     </div>
     {teamPlayers.length > 0 && (
       <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>
@@ -2151,7 +2236,11 @@ const clearCurrentMatch = () => {
           >
             {Array.from({ length: maxThrowsPerEnd }, (_, index) => index + 1).map((throwNumber) => (
               <option key={throwNumber} value={throwNumber}>
-                {throwNumber}投目
+                {getThrowDisplayLabel(
+                  matchFormat,
+                  throwNumber,
+                  getFirstThrowingTeam(settingsStartHammer),
+                )}
               </option>
             ))}
           </select>
@@ -3206,11 +3295,16 @@ const clearCurrentMatch = () => {
           display: 'block',
           touchAction: 'none',
           userSelect: 'none',
-          transform: isBoardFlipped ? 'scaleY(-1)' : undefined,
-          transformOrigin: 'center',
-          transformBox: 'fill-box',
         }}
       >
+        <g
+          ref={boardGroupRef}
+          transform={
+            isBoardFlipped
+              ? `translate(${SHEET_WIDTH * SCALE} ${(BOARD_TOP_Y + BOARD_BOTTOM_Y) * SCALE}) scale(-1 -1)`
+              : undefined
+          }
+        >
         {/* Sheet */}
         <rect
           x="0"
@@ -3375,6 +3469,7 @@ const clearCurrentMatch = () => {
             />
           </g>
         )}
+        </g>
       </svg>
         <div
       className="throw-log"
@@ -3591,25 +3686,39 @@ const clearCurrentMatch = () => {
                 {throwHistory
                   .filter((record) => record.endNumber === selectedPreviewEnd)
                   .sort((a, b) => a.throwNumber - b.throwNumber)
-                  .map((record) => (
-                    <button
-                      key={`${record.endNumber}-${record.throwNumber}`}
-                      onClick={() => handleHistorySelect(record.endNumber, record.throwNumber)}
-                      style={{
-                        padding: '7px 10px',
-                        borderRadius: '8px',
-                        border:
-                          selectedHistoryThrow === record.throwNumber
-                            ? '2px solid #2878d7'
-                            : '1px solid #cbd5e1',
-                        background:
-                          selectedHistoryThrow === record.throwNumber ? '#eaf3ff' : '#fff',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {record.throwNumber}投目
-                    </button>
-                  ))}
+                  .map((record) => {
+                    const firstThrowingTeam = getFirstThrowingTeamForEnd(
+                      throwHistory,
+                      record.endNumber,
+                      initialHammerTeam,
+                    )
+                    const throwLabel = getThrowDisplayLabel(
+                      matchFormat,
+                      record.throwNumber,
+                      firstThrowingTeam,
+                      record.throwerTeam,
+                    )
+
+                    return (
+                      <button
+                        key={`${record.endNumber}-${record.throwNumber}`}
+                        onClick={() => handleHistorySelect(record.endNumber, record.throwNumber)}
+                        style={{
+                          padding: '7px 10px',
+                          borderRadius: '8px',
+                          border:
+                            selectedHistoryThrow === record.throwNumber
+                              ? '2px solid #2878d7'
+                              : '1px solid #cbd5e1',
+                          background:
+                            selectedHistoryThrow === record.throwNumber ? '#eaf3ff' : '#fff',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {throwLabel}
+                      </button>
+                    )
+                  })}
               </div>
             )}
 
@@ -3624,6 +3733,18 @@ const clearCurrentMatch = () => {
                 if (!record) {
                   return null
                 }
+
+                const firstThrowingTeam = getFirstThrowingTeamForEnd(
+                  throwHistory,
+                  record.endNumber,
+                  initialHammerTeam,
+                )
+                const throwLabel = getThrowDisplayLabel(
+                  matchFormat,
+                  record.throwNumber,
+                  firstThrowingTeam,
+                  record.throwerTeam,
+                )
 
                 return (
                   <div
@@ -3645,7 +3766,7 @@ const clearCurrentMatch = () => {
                     >
                       <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                         <div style={{ fontWeight: '700', marginBottom: '6px' }}>
-                          {record.endNumber}エンド {record.throwNumber}投目
+                          {record.endNumber}エンド {throwLabel}
                         </div>
                         <div>ショット: {record.shotType}</div>
                         <div>評価: {record.rating}/4</div>
@@ -3688,7 +3809,7 @@ const clearCurrentMatch = () => {
                           viewBox={`0 ${BOARD_TOP_Y * SCALE} ${SHEET_WIDTH * SCALE} ${BOARD_VIEW_HEIGHT * SCALE}`}
                           width="100%"
                           role="img"
-                          aria-label={`${record.endNumber}エンド ${record.throwNumber}投目のハウス`}
+                          aria-label={`${record.endNumber}エンド ${throwLabel}のハウス`}
                           style={{
                             display: 'block',
                             aspectRatio: `${SHEET_WIDTH} / ${BOARD_VIEW_HEIGHT}`,
