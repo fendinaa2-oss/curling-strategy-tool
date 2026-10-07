@@ -1008,10 +1008,11 @@ const handlePrintMatch = (match: SavedMatch) => {
   const sheetHeight = (sheetWidth * BOARD_VIEW_HEIGHT) / SHEET_WIDTH
   const centerX = sheetWidth / 2
   const scaleX = sheetWidth / SHEET_WIDTH
+  const printBoardFlipped = true
   const toPrintX = (x: number) =>
-    (isBoardFlipped ? SHEET_WIDTH - x : x) * scaleX
+    (printBoardFlipped ? SHEET_WIDTH - x : x) * scaleX
   const toPrintY = (y: number) =>
-    (isBoardFlipped ? BOARD_BOTTOM_Y - y : y - BOARD_TOP_Y) * scaleX
+    (printBoardFlipped ? BOARD_BOTTOM_Y - y : y - BOARD_TOP_Y) * scaleX
   const houseY = toPrintY(houseCenterY)
   const houseRadii = HOUSE_RADII.map((radius) => radius * scaleX)
 
