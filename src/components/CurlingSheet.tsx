@@ -1008,7 +1008,7 @@ const handlePrintMatch = (match: SavedMatch) => {
   const sheetHeight = (sheetWidth * BOARD_VIEW_HEIGHT) / SHEET_WIDTH
   const centerX = sheetWidth / 2
   const scaleX = sheetWidth / SHEET_WIDTH
-  const printBoardFlipped = !isBoardFlipped
+  const printBoardFlipped = true
   const toPrintX = (x: number) =>
     (printBoardFlipped ? SHEET_WIDTH - x : x) * scaleX
   const toPrintY = (y: number) =>
