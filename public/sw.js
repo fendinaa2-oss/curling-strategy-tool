@@ -1,11 +1,5 @@
-const CACHE_NAME = 'curling-strategy-tool-v3'
-const BASE_PATH = new URL('.', self.location.href).pathname
-const APP_SHELL = [
-  BASE_PATH,
-  `${BASE_PATH}index.html`,
-  `${BASE_PATH}favicon.svg`,
-  `${BASE_PATH}manifest.webmanifest`,
-]
+const CACHE_NAME = 'curling-strategy-tool-v2'
+const APP_SHELL = ['/', '/index.html', '/favicon.svg', '/manifest.webmanifest']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -37,10 +31,10 @@ self.addEventListener('fetch', (event) => {
       fetch(event.request)
         .then((response) => {
           const copy = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(BASE_PATH, copy))
+          caches.open(CACHE_NAME).then((cache) => cache.put('/', copy))
           return response
         })
-        .catch(() => caches.match(BASE_PATH)),
+        .catch(() => caches.match('/')),
     )
     return
   }
